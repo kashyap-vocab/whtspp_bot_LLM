@@ -20,6 +20,7 @@ async function handleAboutUsStep(session, userMessage) {
   console.log("📝 User Input:", userMessage);
 
   switch (step) {
+    case "about_start":
     case "about_menu":
       session.step = "about_selection";
       return {
@@ -36,10 +37,10 @@ async function handleAboutUsStep(session, userMessage) {
 Sherpa Hyundai started with a simple mission — to make car buying and ownership a smooth, honest, and enjoyable experience for every customer.
 
 🏢 Our Roots:
-With over 15 years in the automotive industry, we’ve grown from a single dealership to a trusted name in Bangalore for Hyundai cars — both new and certified pre-owned.
+With over 15 years in the automotive industry, we've grown from a single dealership to a trusted name in Bangalore for Hyundai cars — both new and certified pre-owned.
 
 👨👩👧👦 Customer First Approach:
-We’ve proudly served 10,000+ happy customers, thanks to our commitment to transparency, value, and after-sales care.
+We've proudly served 10,000+ happy customers, thanks to our commitment to transparency, value, and after-sales care.
 
 🚀 What Drives Us:
 Our passion is to help families and individuals find the right vehicle that fits their needs, lifestyle, and budget — while delivering 5-star service at every step.
@@ -87,7 +88,7 @@ Want to know more?`,
         };
       }
 
-      if (userMessage.includes("Our Locations")) {
+      if (userMessage.includes("Our Locations") || userMessage.includes("Visit Showroom")) {
         return {
           message: `We'd love to welcome you! Here are our locations:
 
@@ -115,7 +116,7 @@ Want to know more?`,
 ✅ Our team will be ready to assist you
 
 Ready to visit?`,
-          options: ["📞 Call to Confirm", "🚗 Browse Cars Online", "🏠 Back to main menu"]
+          options: ["📞 Contact Details", "🚗 Browse Cars Online", "🏠 Back to main menu"]
         };
       }
 
@@ -181,10 +182,10 @@ Want to explore a service in detail?`,
 ✅ Trusted by thousands of happy customers
 
 🧩 Our real achievement?
-Your trust, referrals, and repeat visits — that’s what drives us every day! 🙌
+Your trust, referrals, and repeat visits — that's what drives us every day! 🙌
 
 Would you like to...`,
-          options: ["📍 See Our Locations", "🎯 Explore Used Cars", "🏠 Back to main menu"]
+          options: ["📍 See Our Locations","🏠 Back to main menu"]
         };
       }
 
@@ -196,6 +197,38 @@ Would you like to...`,
         };
       }
 
+      if (userMessage.includes("Contact Details")) {
+        return {
+          message: `📞 CONTACT US - We're here to help!
+
+🏢 Main Showroom - Bangalore:
+📞 Phone: +91-9876543210
+📧 Email: info@sherpahyundai.com
+🕒 Mon-Sat: 9:00 AM - 8:00 PM
+🕒 Sunday: 10:00 AM - 6:00 PM
+
+🏢 Branch - Electronic City:
+📞 Phone: +91-9876543211
+📧 Email: ecity@sherpahyundai.com
+🕒 Mon-Sat: 9:00 AM - 8:00 PM
+
+📱 WhatsApp Support:
+📞 +91-9876543210 (Same as main showroom)
+
+🎯 What to expect when you call:
+✅ Car availability check
+✅ Test drive scheduling
+✅ Price quotes & offers
+✅ Service appointment booking
+✅ Finance & insurance assistance
+
+💡 Pro Tip: Call during business hours for immediate assistance!
+
+Need anything else?`,
+          options: ["🚗 Browse Used Cars", "📞 Contact Our Team", "🏠 Back to main menu"]
+        };
+      }
+
       if (userMessage.includes("Book a Service")) {
         session.step = 'done';
         return { message: "Perfect! One of our executives will call back shortly. Thanks 😊" };
@@ -203,7 +236,8 @@ Would you like to...`,
 
       if (userMessage.includes("Browse")) {
         session.step = 'browse_start';
-        return { message: "Redirecting to browse cars flow..." };
+        const { handleBrowseUsedCars } = require('./handleBrowseUsedCars');
+        return handleBrowseUsedCars(session, "start over");
       }
 
       if (userMessage.includes("Contact")) {
@@ -217,7 +251,8 @@ Would you like to...`,
       };
 
     default:
-      session.step = 'about_menu';
+      // Fallback for any unexpected step
+      session.step = "about_selection";
       return {
         message: "Welcome to Sherpa Hyundai! Here's what you'd like to know about us:",
         options: aboutUsMenu

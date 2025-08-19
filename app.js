@@ -3,6 +3,9 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 
+// Import database connection
+const pool = require('./db');
+
 const { routeMessage } = require('./utils/mainRouter');
 const sessions = {}; 
 
@@ -10,8 +13,42 @@ const app = express();
 app.use(bodyParser.json());
 
 app.use('/images', express.static('images'));
+app.use('/uploads', express.static('uploads'));
 const WHATSAPP_TOKEN = process.env.WHATSAPP_API_TOKEN;
-const API_BASE_URL = `https://graph.facebook.com/v17.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const API_BASE_URL = `https://graph.facebook.com/v17.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+// Validate environment variables
+if (!WHATSAPP_TOKEN) {
+  console.error("❌ WHATSAPP_API_TOKEN is not set in environment variables");
+  process.exit(1);
+}
+
+if (!WHATSAPP_PHONE_NUMBER_ID) {
+  console.error("❌ WHATSAPP_PHONE_NUMBER_ID is not set in environment variables");
+  process.exit(1);
+}
+
+console.log("🔧 WhatsApp Configuration:");
+console.log("📱 Phone Number ID:", WHATSAPP_PHONE_NUMBER_ID);
+console.log("🔑 Token available:", WHATSAPP_TOKEN ? "Yes" : "No");
+console.log("🌐 API Base URL:", API_BASE_URL);
+
+// WhatsApp Bot Server
+const WHATSAPP_PORT = process.env.WHATSAPP_PORT || 3001;
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    await client.query('SELECT 1');
+    client.release();
+    res.json({ status: 'healthy', database: 'connected' });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(500).json({ status: 'unhealthy', database: 'disconnected', error: error.message });
+  }
+});
 
 // Webhook Verification
 app.get('/webhook', (req, res) => {
@@ -51,12 +88,34 @@ app.post('/webhook', async (req, res) => {
       console.log('From:', from);
       console.log('Message:', userMsg);
       console.log('Session Before:', JSON.stringify(sessions[from], null, 2));
+      
+      // Additional validation
+      if (!userMsg.trim()) {
+        console.error("❌ Empty user message received");
+        return res.sendStatus(200);
+      }
 
-     const response = await routeMessage(sessions[from], userMsg);
-      console.log('Session After:', JSON.stringify(sessions[from], null, 2));
-      console.log('----------------------------------');
+           let response;
+      try {
+        response = await routeMessage(sessions[from], userMsg, pool);
+        console.log('Session After:', JSON.stringify(sessions[from], null, 2));
+        console.log('Response:', JSON.stringify(response, null, 2));
+        console.log('----------------------------------');
+      } catch (error) {
+        console.error("❌ Error in routeMessage:", error);
+        response = { message: "I apologize, but I encountered an error. Please try again." };
+      }
 
-      await sendWhatsAppMessage(from, response.message, response.options || [], response.messages || []);
+      // Validate response before sending
+      if (response === null) {
+        console.log("📸 No additional message needed (button already included in previous messages)");
+        // Don't send any additional message
+      } else if (response && response.message) {
+        await sendWhatsAppMessage(from, response.message, response.options || [], response.messages || []);
+      } else {
+        console.error("❌ Invalid response from routeMessage:", response);
+        await sendWhatsAppMessage(from, "I apologize, but I encountered an error. Please try again.", [], []);
+      }
     }
 
     res.sendStatus(200);
@@ -69,6 +128,30 @@ app.post('/webhook', async (req, res) => {
 // Send WhatsApp Message
 async function sendWhatsAppMessage(to, text, options = [], messages = []) {
   try {
+    // Validate environment variables
+    if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) {
+      console.error("❌ WhatsApp configuration missing");
+      return;
+    }
+
+    // Validate phone number format
+    if (!to || typeof to !== 'string') {
+      console.error("❌ Invalid phone number:", to);
+      return;
+    }
+
+    // Validate input parameters
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      console.error("❌ Invalid message text:", text);
+      text = "I apologize, but I encountered an error. Please try again.";
+    }
+    
+    // Ensure text doesn't exceed WhatsApp's limit
+    if (text.length > 1024) {
+      console.warn("⚠️ Message text too long, truncating...");
+      text = text.substring(0, 1021) + "...";
+    }
+    
     console.log("📨 Preparing to send message to:", to);
     console.log("📝 Message Text:", text);
     console.log("🧩 Options:", options);
@@ -78,15 +161,22 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
     if (messages && messages.length > 0) {
       console.log("📸 Sending car messages...");
       
-      for (const msg of messages) {
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
         try {
+          // Validate individual message
+          if (!msg || !msg.type) {
+            console.error("❌ Invalid message in messages array:", msg);
+            continue;
+          }
+          
           let payload = {
             messaging_product: 'whatsapp',
             to,
             ...msg
           };
 
-          console.log("📦 Message Payload:", JSON.stringify(payload, null, 2));
+          console.log(`📦 Message ${i + 1}/${messages.length} Payload:`, JSON.stringify(payload, null, 2));
           
           const response = await axios.post(API_BASE_URL, payload, {
             headers: {
@@ -95,9 +185,10 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
             }
           });
           
-          console.log("✅ Message sent successfully");
+          console.log(`✅ Message ${i + 1}/${messages.length} sent successfully`);
 
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Increase delay to ensure proper message ordering
+          await new Promise(resolve => setTimeout(resolve, 1000));
           
         } catch (error) {
           console.error("❌ Failed to send message:", error.message);
@@ -106,19 +197,30 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
           }
         }
       }
+      
+      // If we sent messages array, check if we need to send a follow-up message with options
+      if (text.trim().length > 0 && !text.startsWith("Here are some cars for you:")) {
+        console.log("📸 Car images sent, sending follow-up message with options");
+        // Continue to send the text message with options
+      } else {
+        console.log("📸 Car images sent, no follow-up message needed");
+        return;
+      }
     }
 
     let payload;
 
     if (options.length > 0) {
-      const isList = options.length > 3;
+      // Limit options to 10 for WhatsApp compatibility
+      const limitedOptions = options.slice(0, 10);
+      const isList = limitedOptions.length > 3;
       const action = isList
         ? {
             button: 'Choose',
             sections: [
               {
                 title: 'Available Options',
-                rows: options.map((opt, i) => ({
+                rows: limitedOptions.map((opt, i) => ({
                   id: `option_${i + 1}`,
                   title: opt
                 }))
@@ -126,12 +228,18 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
             ]
           }
         : {
-            buttons: options.map((opt, i) => ({
+            buttons: limitedOptions.map((opt, i) => ({
               type: 'reply',
               reply: { id: `option_${i + 1}`, title: opt }
             }))
           };
 
+      // Validate interactive message body
+      if (!text || text.trim().length === 0) {
+        console.error("❌ Attempting to send empty interactive message body");
+        text = "Please select an option:";
+      }
+      
       payload = {
         messaging_product: 'whatsapp',
         to,
@@ -146,6 +254,12 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
 
       console.log("📦 Payload (Interactive):", JSON.stringify(payload, null, 2));
     } else {
+      // Final validation before sending
+      if (!text || text.trim().length === 0) {
+        console.error("❌ Attempting to send empty text message");
+        text = "I apologize, but I encountered an error. Please try again.";
+      }
+      
       payload = {
         messaging_product: 'whatsapp',
         to,
@@ -156,6 +270,10 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
       console.log("📦 Payload (Text):", JSON.stringify(payload, null, 2));
     }
 
+    console.log("📤 Sending to WhatsApp API...");
+    console.log("🌐 URL:", API_BASE_URL);
+    console.log("📦 Payload:", JSON.stringify(payload, null, 2));
+    
     const response = await axios.post(API_BASE_URL, payload, {
       headers: {
         Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -177,7 +295,44 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
 }
 
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server live at http://localhost:${PORT}`);
+const server = app.listen(WHATSAPP_PORT, () => {
+  console.log(`🤖 WhatsApp Bot running on port ${WHATSAPP_PORT}`);
+  console.log(`📱 Webhook endpoint: http://localhost:${WHATSAPP_PORT}/webhook`);
+  console.log(`🏥 Health check: http://localhost:${WHATSAPP_PORT}/health`);
+  console.log(`🚗 Inventory system can be started with: npm run start`);
+  console.log(`🔄 Both services can be started with: npm run both`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+  server.close(() => {
+    console.log('✅ Server closed due to uncaught exception');
+    process.exit(1);
+  });
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  server.close(() => {
+    console.log('✅ Server closed due to unhandled rejection');
+    process.exit(1);
+  });
 });

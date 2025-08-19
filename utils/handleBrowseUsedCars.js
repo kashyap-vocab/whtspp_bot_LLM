@@ -1,53 +1,77 @@
-const pool = require('../db');
 const { formatRupees, getAvailableTypes, getAvailableBrands, getCarsByFilter } = require('./carData');
-const { getNextAvailableDays, getTimeSlots } = require('./timeUtils');
+const { getNextAvailableDays, getTimeSlots, getActualDateFromSelection, getActualDateFromDaySelection } = require('./timeUtils');
+const fs = require('fs');
+const path = require('path');
+
+// Import database connection
+const pool = require('../db');
+
+// Helper function to construct image URL using the new naming convention
+function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = null) {
+  const base = baseUrl || process.env.NGROK_URL || 'http://localhost:3000';
+  const imagePath = `uploads/cars/${registrationNumber}/${registrationNumber}_${sequenceNumber}.jpg`;
+  return `${base}/${imagePath}`;
+}
 
 async function handleBrowseUsedCars(session, userMessage) {
   console.log("📩 Entered handleBrowseUsedCars");
+  
   const step = session.step || 'browse_start';
   console.log("🧠 Current step:", step);
   console.log("📝 User input:", userMessage);
+  console.log("🔍 Session object:", JSON.stringify(session, null, 2));
+
+  // Budget options constant
+  const BUDGET_OPTIONS = [
+    "Under ₹5 Lakhs",
+    "₹5-10 Lakhs",
+    "₹10-15 Lakhs",
+    "₹15-20 Lakhs",
+    "Above ₹20 Lakhs"
+  ];
 
   switch (step) {
     case 'browse_start':
       console.log("🔄 Step matched: browse_start");
+      console.log("📝 User message in browse_start:", userMessage);
+      
+      // Always start with budget selection for new browse conversations
       session.step = 'browse_budget';
       return {
         message: "Great choice! Let's find your perfect car. First, what's your budget range?",
-        options: [
-          "Under ₹5 Lakhs",
-          "₹5-10 Lakhs",
-          "₹10-15 Lakhs",
-          "₹15-20 Lakhs",
-          "Above ₹20 Lakhs"
-        ]
+        options: BUDGET_OPTIONS
       };
 
     case 'browse_budget':
       console.log("🔄 Step matched: browse_budget");
+      console.log("💰 Setting budget to:", userMessage);
+      console.log("🔍 Session before update:", JSON.stringify(session, null, 2));
       session.budget = userMessage;
       session.step = 'browse_type';
-      const types = await getAvailableTypes(session.budget);
+      console.log("📝 Updated session step to:", session.step);
+      console.log("💰 Updated session budget to:", session.budget);
+      console.log("🔍 Session after update:", JSON.stringify(session, null, 2));
+      const types = await getAvailableTypes(pool, session.budget);
       return {
         message: `Perfect! ${userMessage} gives you excellent options. What type of car do you prefer?`,
-        options: ['Any Type', ...types]
+        options: ['all Type', ...types]
       };
 
     case 'browse_type':
       console.log("🔄 Step matched: browse_type");
-      session.type = userMessage === 'Any Type' ? 'Any' : userMessage;
+      session.type = userMessage === 'all Type' ? 'all' : userMessage;
       session.step = 'browse_brand';
-      const brands = await getAvailableBrands(session.budget, session.type);
+      const brands = await getAvailableBrands(pool, session.budget, session.type);
       return {
         message: `Excellent choice! Which brand do you prefer?`,
-        options: ['Any Brand', ...brands]
+        options: ['all Brand', ...brands]
       };
 
     case 'browse_brand':
       console.log("🔄 Step matched: browse_brand");
-      session.brand = userMessage === 'Any Brand' ? 'Any' : userMessage;
+      session.brand = userMessage === 'all Brand' ? 'all' : userMessage;
       session.step = 'show_cars';
-      const cars = await getCarsByFilter(session.budget, session.type, session.brand);
+      const cars = await getCarsByFilter(pool, session.budget, session.type, session.brand);
       session.filteredCars = cars;
       session.carIndex = 0;
       
@@ -58,7 +82,7 @@ async function handleBrowseUsedCars(session, userMessage) {
         };
       }
       
-      return await getCarDisplayChunk(session);
+      return await getCarDisplayChunk(session, pool);
 
     case 'show_more_cars':
       console.log("🔄 Step matched: show_more_cars");
@@ -69,64 +93,61 @@ async function handleBrowseUsedCars(session, userMessage) {
         const currentCar = cars[session.carIndex];
         
         if (currentCar) {
-          session.selectedCar = `${currentCar.make} ${currentCar.model} ${currentCar.variant}`;
+          session.selectedCar = `${currentCar.brand} ${currentCar.model} ${currentCar.variant}`;
           session.step = 'car_selected_options';
           return {
             message: `Great choice! You've selected ${session.selectedCar}. What would you like to do next?`,
-            options: ["Book Test Drive", "See More Cars", "Change My Criteria"]
+            options: ["Book Test Drive", "Change My Criteria"]
           };
         }
       }
       
-      // Handle SELECT button responses (format: book_Make_Model_Variant) - legacy support
+      // Handle SELECT button responses (format: book_Brand_Model_Variant)
       if (userMessage.startsWith("book_")) {
         const carId = userMessage;
         const cars = session.filteredCars || [];
         
         // Find the car by ID
         const selectedCar = cars.find(car => {
-          const carIdFromCar = `book_${car.make}_${car.model}_${car.variant}`.replace(/\s+/g, '_');
+          const carIdFromCar = `book_${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_');
           return carIdFromCar === carId;
         });
         
         if (selectedCar) {
-          session.selectedCar = `${selectedCar.make} ${selectedCar.model} ${selectedCar.variant}`;
+          session.selectedCar = `${selectedCar.brand} ${selectedCar.model} ${selectedCar.variant}`;
           session.step = 'car_selected_options';
           return {
             message: `Great choice! You've selected ${session.selectedCar}. What would you like to do next?`,
-            options: ["Book Test Drive", "See More Cars", "Change My Criteria"]
+            options: ["Book Test Drive", "Change My Criteria"]
           };
         }
       }
       
-      // Handle "more" for pagination
-      if (userMessage.toLowerCase() === "more") {
+      // Handle "Browse More Cars" button
+      if (userMessage === "Browse More Cars") {
         session.carIndex += 3;
-        return await getCarDisplayChunk(session);
+        const cars = session.filteredCars || [];
+        
+        if (session.carIndex >= cars.length) {
+          return {
+            message: "No more cars available. Would you like to change your criteria?",
+            options: ["Change criteria"]
+          };
+        }
+        
+        return await getCarDisplayChunk(session, pool);
       }
       
       // Handle "Change criteria" selection
-      if (userMessage === "Change criteria") {
+      if (userMessage === "Change criteria" || userMessage === "Change My Criteria") {
         session.step = 'browse_start';
         session.carIndex = 0; // Reset car index
         session.filteredCars = []; // Clear filtered cars
         session.selectedCar = null; // Clear selected car
         return {
           message: "No problem! Let's find you a different car. What's your budget range?",
-          options: [
-            "Under ₹5 Lakhs",
-            "₹5-10 Lakhs",
-            "₹10-15 Lakhs",
-            "₹15-20 Lakhs",
-            "Above ₹20 Lakhs"
-          ]
+          options: BUDGET_OPTIONS
         };
-      }
-      
-      // Handle "Show More Cars" selection
-      if (userMessage === "Show More Cars") {
-        session.carIndex += 3;
-        return await getCarDisplayChunk(session);
       }
       
       // If it's a car selection (legacy support)
@@ -148,20 +169,6 @@ async function handleBrowseUsedCars(session, userMessage) {
         };
       }
       
-      if (userMessage === "See More Cars") {
-        session.carIndex += 3;
-        const cars = session.filteredCars || [];
-        
-        if (session.carIndex >= cars.length) {
-          return {
-            message: "You've seen all available cars. Would you like to change your criteria?",
-            options: ["Change My Criteria"]
-          };
-        }
-        
-        return await getCarDisplayChunk(session);
-      }
-      
       if (userMessage === "Change My Criteria") {
         session.step = 'browse_start';
         session.carIndex = 0; // Reset car index
@@ -169,26 +176,34 @@ async function handleBrowseUsedCars(session, userMessage) {
         session.selectedCar = null; // Clear selected car
         return {
           message: "No problem! Let's find you a different car. What's your budget range?",
-          options: [
-            "Under ₹5 Lakhs",
-            "₹5-10 Lakhs",
-            "₹10-15 Lakhs",
-            "₹15-20 Lakhs",
-            "Above ₹20 Lakhs"
-          ]
+          options: BUDGET_OPTIONS
         };
       }
 
     case 'test_drive_date':
       console.log("🔄 Step matched: test_drive_date");
       session.testDriveDate = userMessage;
-      session.step = 'test_drive_day';
+      
       if (["Today", "Tomorrow"].includes(userMessage)) {
+        // Store the actual date for these options
+        const actualDate = getActualDateFromSelection(userMessage);
+        if (actualDate) {
+          session.testDriveActualDate = actualDate;
+          session.testDriveDateFormatted = actualDate.toLocaleDateString('en-IN', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          });
+        }
+        
+        session.step = 'test_drive_time';
         return {
           message: "Perfect! Which time works better for you?",
           options: getTimeSlots()
         };
       } else {
+        session.step = 'test_drive_day';
         return {
           message: "Which day works best for you?",
           options: getNextAvailableDays(userMessage)
@@ -198,6 +213,19 @@ async function handleBrowseUsedCars(session, userMessage) {
     case 'test_drive_day':
       console.log("🔄 Step matched: test_drive_day");
       session.testDriveDay = userMessage;
+      
+      // Get the actual date from the day selection
+      const actualDateFromDay = getActualDateFromDaySelection(userMessage, session.testDriveDate);
+      if (actualDateFromDay) {
+        session.testDriveActualDate = actualDateFromDay;
+        session.testDriveDateFormatted = actualDateFromDay.toLocaleDateString('en-IN', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+      }
+      
       session.step = 'test_drive_time';
       return {
         message: "Perfect! What time works best?",
@@ -231,25 +259,126 @@ async function handleBrowseUsedCars(session, userMessage) {
       session.step = 'td_location_mode';
       return {
         message: "Thank you! Where would you like to take the test drive?",
-        options: ["Showroom pickup", "Home delivery"]
+        options: ["Showroom pickup", "Home pickup"]
       };
 
     case 'td_location_mode':
       console.log("🔄 Step matched: td_location_mode");
+      console.log("🔍 Debug - userMessage:", userMessage);
       session.td_location_mode = userMessage;
-      if (userMessage.includes("delivery")) {
-        session.step = 'td_drop_location';
-        return { message: "Please share your current location/address for the test drive:" };
+      console.log("🔍 Debug - session.td_location_mode set to:", session.td_location_mode);
+      if (userMessage.includes("Home pickup")) {
+        session.step = 'td_home_address';
+        return { message: "Please share your current address for the test drive:" };
       } else {
-        session.step = 'done';
+        session.step = 'test_drive_confirmation';
         return getTestDriveConfirmation(session);
       }
+
+    case 'td_home_address':
+      console.log("🔄 Step matched: td_home_address");
+      session.td_home_address = userMessage;
+      session.step = 'test_drive_confirmation';
+      return getTestDriveConfirmation(session);
 
     case 'td_drop_location':
       console.log("🔄 Step matched: td_drop_location");
       session.td_drop_location = userMessage;
-      session.step = 'done';
+      session.step = 'test_drive_confirmation';
       return getTestDriveConfirmation(session);
+
+    case 'test_drive_confirmation':
+      console.log("🔄 Step matched: test_drive_confirmation");
+      
+      if (userMessage === "Confirm") {
+        // Save test drive details to database
+        try {
+          // Use the actual date if available, otherwise use current date
+          let testDriveDateTime = new Date();
+          if (session.testDriveActualDate) {
+            testDriveDateTime = session.testDriveActualDate;
+            // Set the time based on user selection
+            if (session.testDriveTime) {
+              if (session.testDriveTime.includes("Morning")) {
+                testDriveDateTime.setHours(10, 0, 0, 0);
+              } else if (session.testDriveTime.includes("Afternoon")) {
+                testDriveDateTime.setHours(13, 0, 0, 0);
+              } else if (session.testDriveTime.includes("Evening")) {
+                testDriveDateTime.setHours(16, 0, 0, 0);
+              }
+            }
+          }
+          
+          console.log("📅 Saving test drive with date:", testDriveDateTime);
+          
+          await pool.query(`
+            INSERT INTO test_drives 
+            (user_id, car, datetime, name, phone, has_dl, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+          `, [
+            session.userId || 'unknown', // You might need to pass userId in session
+            session.selectedCar || 'Not selected',
+            testDriveDateTime,
+            session.td_name || 'Not provided',
+            session.td_phone || 'Not provided',
+            session.td_license ? true : false // Convert license info to boolean
+          ]);
+          console.log("✅ Test drive details saved to database");
+        } catch (error) {
+          console.error("❌ Error saving test drive details:", error);
+        }
+        
+        session.step = 'booking_complete';
+        return {
+          message: "Thank you! Your test drive has been confirmed. We'll contact you shortly to finalize the details.",
+          options: ["Explore More", "End Conversation"]
+        };
+      }
+      
+      if (userMessage === "Reject") {
+        session.step = 'browse_start';
+        session.carIndex = 0;
+        session.filteredCars = [];
+        session.selectedCar = null;
+        return {
+          message: "No problem! Let's find you a different car. What's your budget range?",
+          options: BUDGET_OPTIONS
+        };
+      }
+      
+      // If user sends all other message, show confirmation again
+      return getTestDriveConfirmation(session);
+
+    case 'booking_complete':
+      console.log("🔄 Step matched: booking_complete");
+      
+      if (userMessage === "Explore More") {
+        session.step = 'browse_start';
+        session.carIndex = 0;
+        session.filteredCars = [];
+        session.selectedCar = null;
+        return {
+          message: "Welcome! Let's find your perfect car. What's your budget range?",
+          options: BUDGET_OPTIONS
+        };
+      }
+      
+      if (userMessage === "End Conversation") {
+        // Set a flag to prevent greeting message from showing again
+        session.conversationEnded = true;
+        // Clear other session data but keep the flag
+        const conversationEnded = true;
+        Object.keys(session).forEach(key => {
+          delete session[key];
+        });
+        session.conversationEnded = conversationEnded;
+        return null; // Return null to indicate no message should be sent
+      }
+      
+      return {
+        message: "Please select an option:",
+        options: ["Explore More", "End Conversation"]
+      };
 
     case 'change_criteria_confirm':
       console.log("🔄 Step matched: change_criteria_confirm");
@@ -262,11 +391,11 @@ async function handleBrowseUsedCars(session, userMessage) {
 
     default:
       console.log("❌ Step not recognized, restarting...");
-      return { message: "Something went wrong. Let’s start again.", options: ["🏁 Start Again"] };
+      return { message: "Something went wrong. Let's start again.", options: ["🏁 Start Again"] };
   }
 }
 
-async function getCarDisplayChunk(session) {
+async function getCarDisplayChunk(session, pool) {
   const cars = session.filteredCars || [];
   
   if (cars.length === 0) {
@@ -278,26 +407,131 @@ async function getCarDisplayChunk(session) {
   const endIndex = Math.min(startIndex + 3, cars.length);
   const carsToShow = cars.slice(startIndex, endIndex);
 
+  console.log(`📊 Processing ${carsToShow.length} cars (${startIndex + 1}-${endIndex} of ${cars.length})`);
+
   const messages = [];
   
   for (let i = 0; i < carsToShow.length; i++) {
     const car = carsToShow[i];
-    const file = `${car.make}_${car.model}_${car.variant}`.replace(/\s+/g, '_') + '.png';
-    const url = `${process.env.NGROK_URL}/images/${file}`;
+    
+    // Get car images from database
+    const { getCarImages } = require('./carData');
+    let carImages;
+    try {
+      carImages = await getCarImages(pool, car.id);
+      console.log(`📸 Retrieved ${carImages ? carImages.length : 0} images for car ${car.id}`);
+    } catch (error) {
+      console.error(`❌ Error fetching images for car ${car.id}:`, error);
+      carImages = [];
+    }
+    
+    // Also try to get images by registration number for the new naming convention
+    let imagesByRegistration = [];
+    try {
+      imagesByRegistration = await getCarImagesByRegistration(pool, car.registration_number);
+      console.log(`📸 Retrieved ${imagesByRegistration.length} images by registration for ${car.registration_number}`);
+    } catch (error) {
+      console.error(`❌ Error fetching images by registration for ${car.registration_number}:`, error);
+    }
+    
+    // Use images by registration if available, otherwise fall back to database images
+    const finalCarImages = imagesByRegistration.length > 0 ? imagesByRegistration : carImages;
+    
     const caption =
-      `🚗 ${car.make} ${car.model} ${car.variant}\n` +
-      `📅 Year: ${car.manufacturing_year}\n` +
+      `🚗 ${car.brand} ${car.model} ${car.variant}\n` +
+      `📅 Year: ${car.year}\n` +
       `⛽ Fuel: ${car.fuel_type}\n` +
-      `💰 Price: ₹${car.estimated_selling_price}`;
+      `💰 Price: ${formatRupees(car.price)}`;
+    
+    if (finalCarImages && finalCarImages.length > 0) {
+      // Validate that we have valid image data
+      const validImages = finalCarImages.filter(img => img && img.path && typeof img.path === 'string');
+      
+      if (validImages.length === 0) {
+        console.log(`⚠️ No valid images found for car ${car.id}, falling back to text-only`);
+        // Fall back to text-only message
+        const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment';
+        messages.push({
+          type: 'text',
+          text: { body: enhancedCaption }
+        });
+      } else {
+        // Add image message with first available image
+        const firstImage = validImages[0];
+        
+        // Use the new naming convention helper function
+        let imageUrl;
+        if (firstImage.sequence && car.registration_number) {
+          // Use the new naming convention: registrationNumber_1.jpg
+          imageUrl = constructImageUrl(car.registration_number, firstImage.sequence);
+          console.log(`📸 Using new naming convention for image: ${imageUrl}`);
+        } else {
+          // Fall back to the old path-based method
+          if (firstImage.path.startsWith('uploads/')) {
+            imageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/${firstImage.path}`;
+          } else {
+            imageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/uploads/${firstImage.path}`;
+          }
+          console.log(`📸 Using fallback path method for image: ${imageUrl}`);
+        }
+        
+        console.log(`📸 Adding car image: ${imageUrl}`);
+        
+        messages.push({
+          type: 'image',
+          image: { link: imageUrl, caption: caption }
+        });
+        
+        // Add additional images if available (up to 3 total)
+        for (let j = 1; j < Math.min(validImages.length, 3); j++) {
+          const additionalImage = validImages[j];
+          
+          // Use the new naming convention for additional images too
+          let additionalImageUrl;
+          if (additionalImage.sequence && car.registration_number) {
+            additionalImageUrl = constructImageUrl(car.registration_number, additionalImage.sequence);
+          } else {
+            // Fall back to the old path-based method
+            if (additionalImage.path.startsWith('uploads/')) {
+              additionalImageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/${additionalImage.path}`;
+            } else {
+              additionalImageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/uploads/${additionalImage.path}`;
+            }
+          }
+          
+          console.log(`📸 Adding additional car image: ${additionalImageUrl}`);
+          
+          messages.push({
+            type: 'image',
+            image: { link: additionalImageUrl, caption: `${car.brand} ${car.model} - Additional View` }
+          });
+        }
+      }
+    } else {
+      // No images available - show text-only message with enhanced caption
+      console.log(`📸 No images found for car ${car.id}, showing text-only message`);
+      
+      // Enhanced caption for cars without images
+      const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment';
+      
+      // Add text message instead of image
+      messages.push({
+        type: 'text',
+        text: { body: enhancedCaption }
+      });
+      
+      // Try to find image in static images directory as fallback (only if no uploaded images)
+      const staticImageFile = `${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_') + '.png';
+      const staticImageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/images/${staticImageFile}`;
+      
+      console.log(`📸 Trying static image fallback: ${staticImageFile}`);
+      
+      // Note: We don't add the static image here since WhatsApp doesn't support mixed message types
+      // The text message above will be sufficient
+    }
 
-    // Add image message
-    messages.push({
-      type: 'image',
-      image: { link: url, caption: caption }
-    });
-
-    // Add SELECT button message
-    const carId = `book_${car.make}_${car.model}_${car.variant}`.replace(/\s+/g, '_');
+    // Add SELECT button message for each car
+    const carId = `book_${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_');
     messages.push({
       type: 'interactive',
       interactive: {
@@ -318,18 +552,70 @@ async function getCarDisplayChunk(session) {
     });
   }
 
+  // Add "Browse More Cars" button if there are more cars to show
+  const hasMoreCars = endIndex < cars.length;
+  
+  let messageText = `Showing cars ${startIndex + 1}-${endIndex} of ${cars.length}:`;
+  
+  console.log(`📸 Created ${messages.length} messages for cars`);
+  console.log(`📸 Message types:`, messages.map(m => m.type));
+  
   const final = {
-    message: `Showing cars ${startIndex + 1}-${endIndex} of ${cars.length}:`,
+    message: messageText,
     messages: messages
   };
+  
+  // Always add "Browse More Cars" option if there are more cars
+  if (hasMoreCars) {
+    final.options = ["Browse More Cars"];
+    console.log("🔍 Adding Browse More Cars button - hasMoreCars:", hasMoreCars, "cars.length:", cars.length, "endIndex:", endIndex);
+  } else {
+    final.message += "\n\nNo more cars available.";
+    final.options = ["Change criteria"];
+    console.log("🔍 No more cars to show - hasMoreCars:", hasMoreCars, "cars.length:", cars.length, "endIndex:", endIndex);
+  }
+  
+  console.log("🔍 Final response structure:", JSON.stringify(final, null, 2));
+  
   session.step = 'show_more_cars';
   return final;
 }
 
 function getTestDriveConfirmation(session) {
-  const locationText = (session.td_location_mode && session.td_location_mode.includes("showroom"))
-    ? "\n📍 Showroom Address: [Sherpa Hyundai] Showroom 123 MG Road, Bangalore\n🅿️ Free parking available"
-    : `\n📍 Test Drive Location: ${session.td_drop_location || 'To be confirmed'}`;
+  console.log("🔍 Debug - session.td_location_mode:", session.td_location_mode);
+  console.log("🔍 Debug - session.td_home_address:", session.td_home_address);
+  console.log("🔍 Debug - session.td_drop_location:", session.td_drop_location);
+  console.log("🔍 Debug - testDriveDateFormatted:", session.testDriveDateFormatted);
+  
+  let locationText;
+  
+  // Check for different location modes
+  const locationMode = session.td_location_mode ? session.td_location_mode.toLowerCase() : '';
+  console.log("🔍 Debug - Location mode:", locationMode);
+  
+  if (locationMode === "home pickup") {
+    locationText = `\n📍 Test Drive Location: ${session.td_home_address || 'To be confirmed'}`;
+    console.log("🔍 Debug - Using home address:", session.td_home_address);
+  } else if (locationMode === "showroom pickup") {
+    locationText = "\n📍 Showroom Address: Sherpa Hyundai Showroom, 123 MG Road, Bangalore\n🅿️ Free parking available";
+    console.log("🔍 Debug - Using showroom address");
+  } else if (locationMode.includes("delivery")) {
+    locationText = `\n📍 Test Drive Location: ${session.td_drop_location || 'To be confirmed'}`;
+    console.log("🔍 Debug - Using delivery address:", session.td_drop_location);
+  } else {
+    locationText = "\n📍 Test Drive Location: To be confirmed";
+    console.log("🔍 Debug - Using default location");
+  }
+
+  // Format the date properly
+  let dateDisplay = 'To be confirmed';
+  if (session.testDriveDateFormatted) {
+    dateDisplay = session.testDriveDateFormatted;
+  } else if (session.testDriveDate === 'Today' || session.testDriveDate === 'Tomorrow') {
+    dateDisplay = session.testDriveDate;
+  } else if (session.testDriveDay) {
+    dateDisplay = session.testDriveDay;
+  }
 
   return {
     message: `Perfect! Here's your test drive confirmation:
@@ -338,16 +624,19 @@ function getTestDriveConfirmation(session) {
 👤 Name: ${session.td_name || 'Not provided'}
 📱 Phone: ${session.td_phone || 'Not provided'}
 🚗 Car: ${session.selectedCar || 'Not selected'}
-📅 Date: ${session.testDriveDate === 'Today' || session.testDriveDate === 'Tomorrow' ? session.testDriveDate : (session.testDriveDay || 'Not selected')}
+📅 Date: ${dateDisplay}
 ⏰ Time: ${session.testDriveTime || 'Not selected'}
 ${locationText}
 
 What to bring:
 ✅ Valid driving license
-✅ Any photo ID
+✅ Photo ID
 📞 Need help? Call us: +91-9876543210
+
 Quick reminder: We'll also have financing options ready if you like the car during your test drive!
-Looking forward to seeing you! 😊`
+
+Please confirm your booking:`,
+    options: ["Confirm", "Reject"]
   };
 }
 

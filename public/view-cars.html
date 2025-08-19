@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Cars - AutoSherpa</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 5px 0;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+        }
+        .sidebar .nav-link i {
+            width: 20px;
+            margin-right: 10px;
+        }
+        .main-content {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .car-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+            overflow: hidden;
+        }
+        .car-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+        }
+        .car-image {
+            height: 200px;
+            background-size: cover;
+            background-position: center;
+            background-color: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+        }
+        .car-details {
+            padding: 20px;
+        }
+        .car-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        .car-info {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        .car-price {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #28a745;
+            margin-top: 15px;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            color: #2c3e50 !important;
+        }
+        .search-filters {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        .filter-group {
+            margin-bottom: 15px;
+        }
+        .car-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 25px;
+        }
+        .status-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+        .image-gallery {
+            position: relative;
+        }
+        .gallery-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .gallery-nav:hover {
+            background: rgba(0, 0, 0, 0.7);
+        }
+        .gallery-nav.prev {
+            left: 10px;
+        }
+        .gallery-nav.next {
+            right: 10px;
+        }
+        .no-images {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 px-0 sidebar">
+                <div class="p-3">
+                    <h4 class="text-center mb-4">
+                        <i class="fas fa-car me-2"></i>AutoSherpa
+                    </h4>
+                    
+                    <nav class="nav flex-column">
+                        <a class="nav-link" href="/dashboard">
+                            <i class="fas fa-tachometer-alt"></i>Dashboard
+                        </a>
+                        <a class="nav-link" href="/upload-cars">
+                            <i class="fas fa-upload"></i>Upload Cars
+                        </a>
+                        <a class="nav-link" href="/upload-images">
+                            <i class="fas fa-images"></i>Upload Images
+                        </a>
+                        <a class="nav-link active" href="/view-cars">
+                            <i class="fas fa-car-side"></i>View Cars
+                        </a>
+                        <a class="nav-link" href="/test-drive-bookings">
+                            <i class="fas fa-calendar-check"></i>Test Drive Bookings
+                        </a>
+                        <a class="nav-link" href="/car-valuations">
+                            <i class="fas fa-calculator"></i>Car Valuations
+                        </a>
+                    </nav>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="text-center">
+                        <button class="btn btn-outline-light btn-sm" onclick="logout()">
+                            <i class="fas fa-sign-out-alt me-2"></i>Logout
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 main-content">
+                <!-- Top Navigation -->
+                <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+                    <div class="container-fluid">
+                        <span class="navbar-brand">View Cars</span>
+                        <div class="navbar-nav ms-auto">
+                            <span class="navbar-text me-3">
+                                Welcome, <span id="userName">Dealer</span>
+                            </span>
+                        </div>
+                    </div>
+                </nav>
+
+                <div class="p-4">
+                    <!-- Search and Filters -->
+                    <div class="search-filters">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="filter-group">
+                                    <label class="form-label">Search</label>
+                                    <input type="text" class="form-control" id="searchInput" 
+                                           placeholder="Search by brand, model, or registration number"
+                                           onkeyup="filterCars()">
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="filter-group">
+                                    <label class="form-label">Brand</label>
+                                    <select class="form-select" id="brandFilter" onchange="filterCars()">
+                                        <option value="">All Brands</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="filter-group">
+                                    <label class="form-label">Fuel Type</label>
+                                    <select class="form-select" id="fuelFilter" onchange="filterCars()">
+                                        <option value="">All Fuel Types</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="filter-group">
+                                    <label class="form-label">Status</label>
+                                    <select class="form-select" id="statusFilter" onchange="filterCars()">
+                                        <option value="">All Status</option>
+                                        <option value="available">Available</option>
+                                        <option value="sold">Sold</option>
+                                        <option value="reserved">Reserved</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="filter-group">
+                                    <label class="form-label">Price Range</label>
+                                    <select class="form-select" id="priceFilter" onchange="filterCars()">
+                                        <option value="">All Prices</option>
+                                        <option value="0-500000">Under 5 Lakhs</option>
+                                        <option value="500000-1000000">5-10 Lakhs</option>
+                                        <option value="1000000-2000000">10-20 Lakhs</option>
+                                        <option value="2000000+">Above 20 Lakhs</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-outline-primary" onclick="resetFilters()">
+                                        <i class="fas fa-refresh me-2"></i>Reset Filters
+                                    </button>
+                                    <button class="btn btn-outline-success" onclick="exportToCSV()">
+                                        <i class="fas fa-download me-2"></i>Export CSV
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <span class="text-muted">
+                                    Showing <span id="showingCount">0</span> of <span id="totalCount">0</span> cars
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cars Grid -->
+                    <div id="carsGrid" class="car-grid">
+                        <!-- Cars will be populated here -->
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="loadingState" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3 text-muted">Loading cars...</p>
+                    </div>
+
+                    <!-- No Cars State -->
+                    <div id="noCarsState" class="text-center py-5" style="display: none;">
+                        <i class="fas fa-car fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No cars found</h5>
+                        <p class="text-muted">Try adjusting your filters or upload some cars first.</p>
+                        <a href="/upload-cars" class="btn btn-primary">
+                            <i class="fas fa-upload me-2"></i>Upload Cars
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Car Details Modal -->
+    <div class="modal fade" id="carDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="carModalTitle">Car Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="carModalBody">
+                    <!-- Car details will be populated here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let allCars = [];
+        let filteredCars = [];
+
+        // Check authentication
+        function checkAuth() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Load user data
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            document.getElementById('userName').textContent = userData.username || 'Dealer';
+        }
+
+        // Load cars data
+        async function loadCars() {
+            try {
+                const token = localStorage.getItem('authToken');
+                console.log('🔑 Auth token:', token ? 'Present' : 'Missing');
+                
+                if (!token) {
+                    console.error('❌ No auth token found');
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('noCarsState').style.display = 'block';
+                    document.getElementById('noCarsState').innerHTML = `
+                        <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                        <h5 class="text-warning">Authentication Required</h5>
+                        <p class="text-muted">Please log in to view cars.</p>
+                        <a href="/login" class="btn btn-warning">
+                            <i class="fas fa-sign-in-alt me-2"></i>Login
+                        </a>
+                    `;
+                    return;
+                }
+                
+                console.log('📡 Fetching cars from API...');
+                const response = await fetch('/api/cars', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                console.log('📡 API Response status:', response.status);
+                
+                if (response.ok) {
+                    allCars = await response.json();
+                    console.log('✅ Cars loaded successfully:', allCars.length, 'cars');
+                    
+                    if (allCars.length > 0) {
+                        console.log('📊 Sample car data:', allCars[0]);
+                        console.log('📊 First car images:', allCars[0].image_paths);
+                    }
+                    
+                    filteredCars = [...allCars];
+                    populateFilters();
+                    displayCars();
+                    updateCounts();
+                } else {
+                    const errorData = await response.json();
+                    console.error('❌ API Error:', errorData);
+                    
+                    if (response.status === 401) {
+                        // Unauthorized - redirect to login
+                        alert('Session expired. Please log in again.');
+                        localStorage.removeItem('authToken');
+                        localStorage.removeItem('userData');
+                        window.location.href = '/login';
+                        return;
+                    }
+                    
+                    document.getElementById('noCarsState').style.display = 'block';
+                    document.getElementById('noCarsState').innerHTML = `
+                        <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                        <h5 class="text-danger">Failed to Load Cars</h5>
+                        <p class="text-muted">Error: ${errorData.error || 'Unknown error'}</p>
+                        <button class="btn btn-primary" onclick="loadCars()">
+                            <i class="fas fa-refresh me-2"></i>Try Again
+                        </button>
+                    `;
+                }
+            } catch (error) {
+                console.error('❌ Error loading cars:', error);
+                console.error('❌ Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name
+                });
+                
+                document.getElementById('noCarsState').style.display = 'block';
+                document.getElementById('noCarsState').innerHTML = `
+                    <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                    <h5 class="text-danger">Network Error</h5>
+                    <p class="text-muted">Failed to connect to server: ${error.message}</p>
+                    <button class="btn btn-primary" onclick="loadCars()">
+                        <i class="fas fa-refresh me-2"></i>Try Again
+                    </button>
+                `;
+            } finally {
+                document.getElementById('loadingState').style.display = 'none';
+            }
+        }
+
+        // Populate filter options
+        function populateFilters() {
+            const brands = [...new Set(allCars.map(car => car.brand))].sort();
+            const fuelTypes = [...new Set(allCars.map(car => car.fuel_type))].sort();
+            
+            const brandFilter = document.getElementById('brandFilter');
+            const fuelFilter = document.getElementById('fuelFilter');
+            
+            brands.forEach(brand => {
+                const option = document.createElement('option');
+                option.value = brand;
+                option.textContent = brand;
+                brandFilter.appendChild(option);
+            });
+            
+            fuelTypes.forEach(fuel => {
+                const option = document.createElement('option');
+                option.value = fuel;
+                option.textContent = fuel;
+                fuelFilter.appendChild(option);
+            });
+        }
+
+        // Display cars
+        function displayCars() {
+            const grid = document.getElementById('carsGrid');
+            
+            if (filteredCars.length === 0) {
+                grid.style.display = 'none';
+                document.getElementById('noCarsState').style.display = 'block';
+                return;
+            }
+            
+            grid.style.display = 'grid';
+            document.getElementById('noCarsState').style.display = 'none';
+            
+            grid.innerHTML = filteredCars.map(car => createCarCard(car)).join('');
+        }
+
+        // Create car card
+        function createCarCard(car) {
+            console.log(`📸 Creating card for car: ${car.registration_number}, Images: ${car.image_paths ? car.image_paths.length : 0}`);
+            
+            let mainImage = null;
+            let imageCount = 0;
+            
+            if (car.image_paths && Array.isArray(car.image_paths) && car.image_paths.length > 0) {
+                // Filter out any null or undefined image paths
+                const validImages = car.image_paths.filter(path => path && typeof path === 'string');
+                imageCount = validImages.length;
+                
+                if (validImages.length > 0) {
+                    const imagePath = validImages[0];
+                    // Construct proper URL from stored path
+                    const baseUrl = window.location.origin;
+                    mainImage = imagePath.startsWith('http') ? imagePath : `${baseUrl}/${imagePath}`;
+                    
+                    console.log(`📸 Car ${car.registration_number}: Using image: ${mainImage}`);
+                }
+            }
+            
+            const statusClass = car.status === 'available' ? 'success' : 
+                               car.status === 'sold' ? 'danger' : 'warning';
+            
+            return `
+                <div class="car-card">
+                    <div class="image-gallery">
+                        <div class="car-image" style="background-image: ${mainImage ? `url('${mainImage}')` : 'none'}">
+                            ${!mainImage ? `
+                                <div class="no-images">
+                                    <i class="fas fa-image fa-2x mb-2"></i>
+                                    <small>No Images</small>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <span class="status-badge badge bg-${statusClass}">${car.status}</span>
+                        ${imageCount > 1 ? `
+                            <button class="gallery-nav prev" onclick="showCarDetails(${car.id})">
+                                <i class="fas fa-images"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div class="car-details">
+                        <div class="car-title">${car.brand} ${car.model}</div>
+                        <div class="car-info">
+                            <i class="fas fa-hashtag me-1"></i>${car.registration_number}
+                        </div>
+                        <div class="car-info">
+                            <i class="fas fa-calendar me-1"></i>${car.year} • ${car.fuel_type} • ${car.transmission}
+                        </div>
+                        <div class="car-info">
+                            <i class="fas fa-road me-1"></i>${car.mileage ? car.mileage.toLocaleString() + ' km' : 'N/A'}</div>
+                        <div class="car-info">
+                            <i class="fas fa-palette me-1"></i>${car.color || 'N/A'}</div>
+                        <div class="car-price">₹${car.price ? car.price.toLocaleString() : 'N/A'}</div>
+                        <div class="mt-3">
+                            <button class="btn btn-outline-primary btn-sm" onclick="showCarDetails(${car.id})">
+                                <i class="fas fa-eye me-1"></i>View Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Filter cars
+        function filterCars() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const brandFilter = document.getElementById('brandFilter').value;
+            const fuelFilter = document.getElementById('fuelFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const priceFilter = document.getElementById('priceFilter').value;
+            
+            filteredCars = allCars.filter(car => {
+                // Search term
+                const searchMatch = !searchTerm || 
+                    car.brand.toLowerCase().includes(searchTerm) ||
+                    car.model.toLowerCase().includes(searchTerm) ||
+                    car.registration_number.toLowerCase().includes(searchTerm);
+                
+                // Brand filter
+                const brandMatch = !brandFilter || car.brand === brandFilter;
+                
+                // Fuel filter
+                const fuelMatch = !fuelFilter || car.fuel_type === fuelFilter;
+                
+                // Status filter
+                const statusMatch = !statusFilter || car.status === statusFilter;
+                
+                // Price filter
+                let priceMatch = true;
+                if (priceFilter && car.price) {
+                    const [min, max] = priceFilter.split('-').map(p => 
+                        p === '+' ? Infinity : parseInt(p)
+                    );
+                    priceMatch = car.price >= min && (max === Infinity || car.price <= max);
+                }
+                
+                return searchMatch && brandMatch && fuelMatch && statusMatch && priceMatch;
+            });
+            
+            displayCars();
+            updateCounts();
+        }
+
+        // Reset filters
+        function resetFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('brandFilter').value = '';
+            document.getElementById('fuelFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('priceFilter').value = '';
+            
+            filteredCars = [...allCars];
+            displayCars();
+            updateCounts();
+        }
+
+        // Update counts
+        function updateCounts() {
+            document.getElementById('showingCount').textContent = filteredCars.length;
+            document.getElementById('totalCount').textContent = allCars.length;
+        }
+
+        // Show car details
+        function showCarDetails(carId) {
+            const car = allCars.find(c => c.id === carId);
+            if (!car) return;
+            
+            document.getElementById('carModalTitle').textContent = `${car.brand} ${car.model}`;
+            
+            const modalBody = document.getElementById('carModalBody');
+            modalBody.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Basic Information</h6>
+                        <table class="table table-sm">
+                            <tr><td>Registration:</td><td>${car.registration_number}</td></tr>
+                            <tr><td>Brand:</td><td>${car.brand}</td></tr>
+                            <tr><td>Model:</td><td>${car.model}</td></tr>
+                            <tr><td>Variant:</td><td>${car.variant || 'N/A'}</td></tr>
+                            <tr><td>Year:</td><td>${car.year}</td></tr>
+                            <tr><td>Status:</td><td><span class="badge bg-${car.status === 'available' ? 'success' : car.status === 'sold' ? 'danger' : 'warning'}">${car.status}</span></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Technical Details</h6>
+                        <table class="table table-sm">
+                            <tr><td>Fuel Type:</td><td>${car.fuel_type}</td></tr>
+                            <tr><td>Transmission:</td><td>${car.transmission}</td></tr>
+                            <tr><td>Mileage:</td><td>${car.mileage ? car.mileage.toLocaleString() + ' km' : 'N/A'}</td></tr>
+                            <tr><td>Engine:</td><td>${car.engine_cc ? car.engine_cc + ' cc' : 'N/A'}</td></tr>
+                            <tr><td>Power:</td><td>${car.power_bhp ? car.power_bhp + ' bhp' : 'N/A'}</td></tr>
+                            <tr><td>Seats:</td><td>${car.seats || 'N/A'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Additional Information</h6>
+                        <table class="table table-sm">
+                            <tr><td>Color:</td><td>${car.color || 'N/A'}</td></tr>
+                            <tr><td>Price:</td><td><strong class="text-success">₹${car.price ? car.price.toLocaleString() : 'N/A'}</strong></td></tr>
+                            <tr><td>Description:</td><td>${car.description || 'No description available'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                ${car.image_paths && car.image_paths.length > 0 ? `
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Images (${car.image_paths.length})</h6>
+                        <div class="row g-2">
+                            ${car.image_paths.map((path, index) => {
+                                // Construct proper URL from stored path
+                                const baseUrl = window.location.origin; // Gets http://localhost:3000
+                                const imageUrl = path.startsWith('http') ? path : `${baseUrl}/${path}`;
+                                
+                                console.log(`📸 Modal image ${index + 1}: ${path} -> ${imageUrl}`);
+                                
+                                return `
+                                    <div class="col-md-3">
+                                        <img src="${imageUrl}" class="img-fluid rounded" alt="Image ${index + 1}" 
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block'; console.error('Failed to load image:', '${imageUrl}');">
+                                        <div class="text-center text-muted" style="display: none;">
+                                            <i class="fas fa-image fa-2x"></i>
+                                            <br><small>Image ${index + 1}</small>
+                                            <br><small class="text-danger">Failed to load</small>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('carDetailsModal'));
+            modal.show();
+        }
+
+        // Export to CSV
+        function exportToCSV() {
+            if (filteredCars.length === 0) {
+                alert('No cars to export');
+                return;
+            }
+            
+            const headers = ['Registration', 'Brand', 'Model', 'Variant', 'Year', 'Fuel Type', 'Transmission', 'Mileage', 'Price', 'Color', 'Status'];
+            const csvContent = [
+                headers.join(','),
+                ...filteredCars.map(car => [
+                    car.registration_number,
+                    car.brand,
+                    car.model,
+                    car.variant || '',
+                    car.year,
+                    car.fuel_type,
+                    car.transmission,
+                    car.mileage || '',
+                    car.price || '',
+                    car.color || '',
+                    car.status
+                ].join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cars_export_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            window.location.href = '/';
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+            loadCars();
+        });
+    </script>
+</body>
+</html>

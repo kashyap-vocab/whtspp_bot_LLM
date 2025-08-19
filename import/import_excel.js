@@ -1,5 +1,5 @@
 const xlsx = require('xlsx');
-const pool = require('../db');
+const { pool } = require('../db');
 
 async function importExcel() {
   const workbook = xlsx.readFile('./data/brand_models.xlsx');

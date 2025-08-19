@@ -150,23 +150,36 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
       // ✅ Save to database
-      await pool.query(
-        `INSERT INTO car_valuations
-        (name, phone, location, brand, model, year, fuel, kms, owner, condition)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [
-          confirmation.name,
-          confirmation.phone,
-          confirmation.location,
-          session.brand,
-          session.model,
-          session.year,
-          session.fuel,
-          session.kms,
-          session.owner,
-          session.condition
-        ]
-      );
+      try {
+        if (!pool || typeof pool.query !== 'function') {
+          console.error('❌ Database pool not available');
+          throw new Error('Database connection not available');
+        }
+
+        const result = await pool.query(
+          `INSERT INTO car_valuations
+          (name, phone, location, brand, model, year, fuel, kms, owner, condition, submitted_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          RETURNING id`,
+          [
+            confirmation.name,
+            confirmation.phone,
+            confirmation.location,
+            session.brand,
+            session.model,
+            session.year,
+            session.fuel,
+            session.kms,
+            session.owner,
+            session.condition
+          ]
+        );
+        
+        console.log('✅ Car valuation saved to database with ID:', result.rows[0]?.id);
+      } catch (error) {
+        console.error('❌ Error saving car valuation to database:', error);
+        // Continue with the flow even if database save fails
+      }
 
       return {
         message:
@@ -185,8 +198,39 @@ async function handleCarValuationStep(session, userMessage) {
 4. Instant payment if you accept our offer
 
 📞 Questions? Call: +91-9876543210
-Thank you for choosing Sherpa Hyundai! 😊`
+Thank you for choosing Sherpa Hyundai! 😊`,
+        options: ["Explore", "End Conversation"]
       };
+
+    case 'done':
+      if (userMessage === "Explore") {
+        // Reset session and go back to main menu
+        session.step = 'main_menu';
+        return {
+          message: "Great! Let's explore more options. What would you like to do?",
+          options: [
+            "🚗 Browse Used Cars",
+            "💰 Get Car Valuation", 
+            "📞 Contact Our Team",
+            "ℹ️ About Us"
+          ]
+        };
+      } else if (userMessage === "End Conversation") {
+        // End conversation with thank you note
+        session.step = 'conversation_ended';
+        return {
+          message: `Thank you for choosing Sherpa Hyundai! 🙏
+
+We appreciate your time and look forward to serving you.
+
+📞 For any queries: +91-9876543210
+📍 Visit us: 123 MG Road, Bangalore
+🌐 Website: www.sherpahyundai.com
+
+Have a great day! 😊`
+        };
+      }
+      return { message: "Something went wrong. Please try again." };
 
     default:
       return { message: "Something went wrong. Please try again." };

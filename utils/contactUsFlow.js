@@ -1,4 +1,4 @@
-const pool = require('../db');
+const { pool } = require('../db');
 
 async function handleContactUsStep(session, userMessage) {
   const state = session.step || 'contact_menu';
@@ -9,10 +9,10 @@ async function handleContactUsStep(session, userMessage) {
     case 'contact_start':
     case 'contact_menu':
       session.step = 'contact_menu'; // Reset step in case it’s called from main menu
-      if (userMessage.includes("Call")) {
-        session.step = 'done';
-        return {
-          message: `Perfect! Here are our direct contact numbers for immediate assistance:
+             if (userMessage.includes("Call")) {
+         session.step = 'done';
+         return {
+           message: `Perfect! Here are our direct contact numbers for immediate assistance:
 
 📞 CALL US DIRECTLY:
 🏢 Main Showroom - Bangalore:
@@ -27,9 +27,10 @@ async function handleContactUsStep(session, userMessage) {
 🆘 Emergency Support:
 📞 24/7 Helpline: +91-9876543213
 
-💡 Pro Tip: Mention you contacted us via WhatsApp for priority assistance!`
-        };
-      }
+💡 Pro Tip: Mention you contacted us via WhatsApp for priority assistance!`,
+           options: ["Explore", "End Conversation"]
+         };
+       }
 
       if (userMessage.toLowerCase().includes("callback")) {
         session.step = 'callback_time';
@@ -43,10 +44,10 @@ async function handleContactUsStep(session, userMessage) {
         };
       }
 
-      if (userMessage.includes("Visit")) {
-        session.step = 'done';
-        return {
-          message: `We'd love to welcome you! Here are our locations:
+             if (userMessage.includes("Visit")) {
+         session.step = 'done';
+         return {
+           message: `We'd love to welcome you! Here are our locations:
 
 📍 SHERPA HYUNDAI LOCATIONS:
 
@@ -64,9 +65,10 @@ async function handleContactUsStep(session, userMessage) {
 🗺️ How to Reach:
 🚇 Metro: MG Road Station (2 min walk)
 🚗 Car: Ring Road access
-🚌 Buses available nearby`
-        };
-      }
+🚌 Buses available nearby`,
+           options: ["Explore", "End Conversation"]
+         };
+       }
 
       return {
         message: "How would you like to get in touch?",
@@ -123,8 +125,39 @@ async function handleContactUsStep(session, userMessage) {
 Need urgent help?
 📞 Call: +91-9876543210
 📍 Visit: 123 MG Road, Bangalore
-Thank you! 😊`
+Thank you! 😊`,
+        options: ["Explore", "End Conversation"]
       };
+
+    case 'done':
+      if (userMessage === "Explore") {
+        // Reset session and go back to main menu
+        session.step = 'main_menu';
+        return {
+          message: "Great! Let's explore more options. What would you like to do?",
+          options: [
+            "🚗 Browse Used Cars",
+            "💰 Get Car Valuation", 
+            "📞 Contact Our Team",
+            "ℹ️ About Us"
+          ]
+        };
+      } else if (userMessage === "End Conversation") {
+        // End conversation with thank you note
+        session.step = 'conversation_ended';
+        return {
+          message: `Thank you for choosing Sherpa Hyundai! 🙏
+
+We appreciate your time and look forward to serving you.
+
+📞 For any queries: +91-9876543210
+📍 Visit us: 123 MG Road, Bangalore
+🌐 Website: www.sherpahyundai.com
+
+Have a great day! 😊`
+        };
+      }
+      return { message: "Something went wrong in contact flow. Please try again." };
 
     default:
       return { message: "Something went wrong in contact flow. Please try again." };

@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Images - AutoSherpa</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 5px 0;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+        }
+        .sidebar .nav-link i {
+            width: 20px;
+            margin-right: 10px;
+        }
+        .main-content {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .upload-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+        .image-upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .image-upload-area:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+        .image-upload-area.has-image {
+            border-color: #28a745;
+            background-color: #f8fff9;
+        }
+        .image-preview {
+            max-width: 100%;
+            max-height: 100px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            color: #2c3e50 !important;
+        }
+        .car-search {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .image-type-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        .upload-progress {
+            height: 25px;
+            border-radius: 15px;
+        }
+        
+        .form-label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .form-select, .form-control {
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.9);
+        }
+        
+        .form-select:focus, .form-control:focus {
+            border-color: #fff;
+            box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.25);
+        }
+        
+        .car-search .row {
+            align-items: end;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 px-0 sidebar">
+                <div class="p-3">
+                    <h4 class="text-center mb-4">
+                        <i class="fas fa-car me-2"></i>AutoSherpa
+                    </h4>
+                    
+                    <nav class="nav flex-column">
+                        <a class="nav-link" href="/dashboard">
+                            <i class="fas fa-tachometer-alt"></i>Dashboard
+                        </a>
+                        <a class="nav-link" href="/upload-cars">
+                            <i class="fas fa-upload"></i>Upload Cars
+                        </a>
+                        <a class="nav-link active" href="/upload-images">
+                            <i class="fas fa-images"></i>Upload Images
+                        </a>
+                        <a class="nav-link" href="/view-cars">
+                            <i class="fas fa-car-side"></i>View Cars
+                        </a>
+                        <a class="nav-link" href="/test-drive-bookings">
+                            <i class="fas fa-calendar-check"></i>Test Drive Bookings
+                        </a>
+                        <a class="nav-link" href="/car-valuations">
+                            <i class="fas fa-calculator"></i>Car Valuations
+                        </a>
+                    </nav>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="text-center">
+                        <button class="btn btn-outline-light btn-sm" onclick="logout()">
+                            <i class="fas fa-sign-out-alt me-2"></i>Logout
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 main-content">
+                <!-- Top Navigation -->
+                <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+                    <div class="container-fluid">
+                        <span class="navbar-brand">Upload Images</span>
+                        <div class="navbar-nav ms-auto">
+                            <span class="navbar-text me-3">
+                                Welcome, <span id="userName">Dealer</span>
+                            </span>
+                        </div>
+                    </div>
+                </nav>
+
+                <div class="p-4">
+                    <!-- Car Search Section -->
+                    <div class="car-search">
+                        <h5 class="mb-3">
+                            <i class="fas fa-search me-2"></i>Find Car for Image Upload
+                        </h5>
+                        
+                        <!-- Search Options -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-3">
+                                <label for="brandFilter" class="form-label text-white">Brand</label>
+                                <select class="form-select" id="brandFilter" onchange="filterCars()">
+                                    <option value="">All Brands</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="modelFilter" class="form-label text-white">Model</label>
+                                <select class="form-select" id="modelFilter" onchange="onModelChange()">
+                                    <option value="">All Models</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="registrationFilter" class="form-label text-white">Registration Number</label>
+                                <select class="form-select" id="registrationFilter" onchange="selectCarByRegistration()">
+                                    <option value="">Select Registration</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="searchInput" class="form-label text-white">Search</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="searchInput" 
+                                           placeholder="Search cars..." 
+                                           onkeyup="searchCars()">
+                                    <button class="btn btn-light" type="button" onclick="searchCars()">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-light btn-sm mt-4" onclick="clearFilters()">
+                                    <i class="fas fa-times me-1"></i>Clear Filters
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Registration Number Input -->
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="registrationNumber" class="form-label text-white">Quick Registration Number</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="registrationNumber" 
+                                           placeholder="Enter registration number (e.g., MH12AB1234)" 
+                                           onkeyup="searchCarByRegistration()">
+                                    <button class="btn btn-light" type="button" onclick="searchCarByRegistration()">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Filter Status Display -->
+                        <div id="filterStatus" class="mt-3" style="display: none;">
+                            <div class="alert alert-light">
+                                <h6 class="mb-2">
+                                    <i class="fas fa-filter me-2"></i>Current Filters
+                                </h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <strong>Brand:</strong> <span id="currentBrand">All</span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <strong>Model:</strong> <span id="currentModel">All</span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <strong>Cars Found:</strong> <span id="carsCount">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Car Info Display -->
+                        <div id="carInfo" style="display: none;" class="mt-3">
+                            <div class="alert alert-info">
+                                <h6 class="mb-2">
+                                    <i class="fas fa-car me-2"></i>
+                                    <span id="carDetails"></span>
+                                </h6>
+                                <small>Now you can upload 4 images for this car</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Image Upload Section -->
+                    <div class="upload-card">
+                        <h4 class="mb-4">
+                            <i class="fas fa-images me-2"></i>Upload Car Images
+                        </h4>
+                        
+                        <div id="uploadSection" style="display: none;">
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <div class="image-upload-area" id="frontImageArea" onclick="selectImage('front')">
+                                        <i class="fas fa-car fa-2x text-primary mb-2"></i>
+                                        <h6>Front View</h6>
+                                        <small class="text-muted">Click to upload</small>
+                                        <div id="frontImagePreview"></div>
+                                        <input type="file" id="frontImage" accept="image/*" style="display: none;" 
+                                               onchange="previewImage('front', this)">
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <div class="image-upload-area" id="backImageArea" onclick="selectImage('back')">
+                                        <i class="fas fa-car fa-2x text-primary mb-2"></i>
+                                        <h6>Back View</h6>
+                                        <small class="text-muted">Click to upload</small>
+                                        <div id="backImagePreview"></div>
+                                        <input type="file" id="backImage" accept="image/*" style="display: none;" 
+                                               onchange="previewImage('back', this)">
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <div class="image-upload-area" id="sideImageArea" onclick="selectImage('side')">
+                                        <i class="fas fa-car fa-2x text-primary mb-2"></i>
+                                        <h6>Side View</h6>
+                                        <small class="text-muted">Click to upload</small>
+                                        <div id="sideImagePreview"></div>
+                                        <input type="file" id="sideImage" accept="image/*" style="display: none;" 
+                                               onchange="previewImage('side', this)">
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <div class="image-upload-area" id="interiorImageArea" onclick="selectImage('interior')">
+                                        <i class="fas fa-car fa-2x text-primary mb-2"></i>
+                                        <h6>Interior</h6>
+                                        <small class="text-muted">Click to upload</small>
+                                        <div id="sideImagePreview"></div>
+                                        <input type="file" id="interiorImage" accept="image/*" style="display: none;" 
+                                               onchange="previewImage('interior', this)">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Upload Progress -->
+                            <div id="uploadProgress" style="display: none;" class="mt-4">
+                                <h6>Uploading images...</h6>
+                                <div class="progress mb-3">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                         role="progressbar" style="width: 0%" id="progressBar">0%</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Upload Button -->
+                            <div class="text-center mt-4">
+                                <button class="btn btn-primary btn-lg" onclick="uploadImages()" id="uploadBtn" disabled>
+                                    <i class="fas fa-upload me-2"></i>Upload All Images
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Instructions -->
+                        <div id="instructions" class="mt-4">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-info-circle me-2"></i>Instructions</h6>
+                                <ul class="mb-0">
+                                    <li>First, search for a car using its registration number</li>
+                                    <li>Upload 4 images: Front, Back, Side, and Interior views</li>
+                                    <li>Images will be organized by registration number</li>
+                                    <li>Supported formats: JPG, PNG, GIF</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentCarId = null;
+        let currentRegistrationNumber = '';
+        let uploadedImages = {
+            front: null,
+            back: null,
+            side: null,
+            interior: null
+        };
+        let allCars = []; // Store all cars for filtering
+
+        // Check authentication
+        async function checkAuth() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/cars', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+                    document.getElementById('userName').textContent = userData.username || 'Dealer';
+                    loadCars(); // Load cars for dropdowns
+                } else {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Auth check error:', error);
+                window.location.href = '/login';
+            }
+        }
+
+
+
+        // Display car information
+        function displayCarInfo(car) {
+            document.getElementById('carDetails').textContent = 
+                `${car.brand} ${car.model} ${car.variant} (${car.year})`;
+            document.getElementById('carInfo').style.display = 'block';
+        }
+
+        // Hide car information
+        function hideCarInfo() {
+            document.getElementById('carInfo').style.display = 'none';
+            document.getElementById('uploadSection').style.display = 'none';
+            currentCarId = null;
+            currentRegistrationNumber = '';
+            resetUploads();
+        }
+
+        // Show upload section
+        function showUploadSection() {
+            document.getElementById('uploadSection').style.display = 'block';
+            document.getElementById('instructions').style.display = 'none';
+        }
+
+        // Select image
+        function selectImage(type) {
+            document.getElementById(`${type}Image`).click();
+        }
+
+        // Preview image
+        function previewImage(type, input) {
+            const file = input.files[0];
+            if (file) {
+                uploadedImages[type] = file;
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const previewDiv = document.getElementById(`${type}ImagePreview`);
+                    previewDiv.innerHTML = `
+                        <img src="${e.target.result}" class="image-preview" alt="${type} view">
+                        <div class="image-type-label">${type.toUpperCase()} VIEW</div>
+                    `;
+                    
+                    document.getElementById(`${type}ImageArea`).classList.add('has-image');
+                };
+                reader.readAsDataURL(file);
+                
+                checkUploadReady();
+            }
+        }
+
+        // Check if ready to upload
+        function checkUploadReady() {
+            const allImagesUploaded = Object.values(uploadedImages).every(img => img !== null);
+            document.getElementById('uploadBtn').disabled = !allImagesUploaded;
+        }
+
+        // Upload images
+        async function uploadImages() {
+            if (!currentCarId) {
+                alert('Please select a car first');
+                return;
+            }
+            
+            const allImagesUploaded = Object.values(uploadedImages).every(img => img !== null);
+            if (!allImagesUploaded) {
+                alert('Please upload all 4 images');
+                return;
+            }
+            
+            // Show progress
+            document.getElementById('uploadProgress').style.display = 'block';
+            document.getElementById('uploadBtn').disabled = true;
+            
+            try {
+                const token = localStorage.getItem('authToken');
+                const formData = new FormData();
+                
+                // Define image types and their corresponding indices
+                const imageTypes = ['front', 'back', 'side', 'interior'];
+                const imageIndices = [];
+                
+                // Add images to form data with proper indexing
+                imageTypes.forEach((type, index) => {
+                    const file = uploadedImages[type];
+                    if (file) {
+                        formData.append('images', file);
+                        imageIndices.push(index); // Build the indices array
+                    }
+                });
+                
+                // Add metadata
+                formData.append('registrationNumber', currentRegistrationNumber);
+                formData.append('imageTypes', JSON.stringify(imageTypes));
+                formData.append('imageIndices', JSON.stringify(imageIndices)); // Send as JSON string
+                
+                console.log(`📸 Uploading ${imageTypes.length} images for car ${currentRegistrationNumber}`);
+                console.log(`📸 Image indices:`, imageIndices);
+                console.log(`📸 Image types:`, imageTypes);
+                
+                const response = await fetch('/api/upload-car-images', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('Images uploaded successfully!');
+                    console.log('✅ Upload result:', result);
+                    resetUploads();
+                    hideCarInfo();
+                    document.getElementById('registrationNumber').value = '';
+                } else {
+                    alert('Upload failed: ' + (result.error || 'Unknown error'));
+                }
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('An error occurred during upload');
+            } finally {
+                // Hide progress
+                document.getElementById('uploadProgress').style.display = 'none';
+                document.getElementById('uploadBtn').disabled = false;
+            }
+        }
+
+                // Reset uploads
+        function resetUploads() {
+            uploadedImages = {
+                front: null,
+                back: null,
+                side: null,
+                interior: null
+            };
+            
+            // Reset previews
+            ['front', 'back', 'side', 'interior'].forEach(type => {
+                document.getElementById(`${type}ImagePreview`).innerHTML = '';
+                document.getElementById(`${type}ImageArea`).classList.remove('has-image');
+                document.getElementById(`${type}Image`).value = '';
+            });
+            
+            document.getElementById('uploadBtn').disabled = true;
+        }
+
+        // Load cars for dropdowns
+        async function loadCars() {
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/cars', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    allCars = await response.json();
+                    console.log('🚗 Loaded cars from database:', allCars.length);
+                    console.log('📊 Available brands:', [...new Set(allCars.map(car => car.brand))].sort());
+                    populateDropdowns(allCars);
+                }
+            } catch (error) {
+                console.error('Load cars error:', error);
+            }
+        }
+
+        // Populate dropdowns with car data
+        function populateDropdowns(cars) {
+            const brandFilter = document.getElementById('brandFilter');
+            const modelFilter = document.getElementById('modelFilter');
+            const registrationFilter = document.getElementById('registrationFilter');
+            
+            // Clear existing options
+            brandFilter.innerHTML = '<option value="">All Brands</option>';
+            modelFilter.innerHTML = '<option value="">All Models</option>';
+            registrationFilter.innerHTML = '<option value="">Select Registration</option>';
+            
+            // Get unique brands and models
+            const brands = [...new Set(cars.map(car => car.brand))].sort();
+            
+            // Populate brand dropdown
+            brands.forEach(brand => {
+                const option = document.createElement('option');
+                option.value = brand;
+                option.textContent = brand;
+                brandFilter.appendChild(option);
+            });
+            
+            // Don't populate model dropdown initially - it will be populated when brand is selected
+            // Populate registration dropdown
+            cars.forEach(car => {
+                const option = document.createElement('option');
+                option.value = car.registration_number;
+                option.textContent = `${car.registration_number} - ${car.brand} ${car.model}`;
+                registrationFilter.appendChild(option);
+            });
+        }
+
+        // Filter cars based on brand and model selection (called when brand changes)
+        function filterCars() {
+            const selectedBrand = document.getElementById('brandFilter').value;
+            
+            console.log(`🔄 Brand changed to: ${selectedBrand}`);
+            
+            // Update model dropdown based on selected brand
+            const modelFilter = document.getElementById('modelFilter');
+            modelFilter.innerHTML = '<option value="">All Models</option>';
+            
+            if (selectedBrand) {
+                // Get models available for the selected brand
+                const brandModels = [...new Set(allCars
+                    .filter(car => car.brand === selectedBrand)
+                    .map(car => car.model)
+                )].sort();
+                
+                console.log(`📊 Available models for ${selectedBrand}:`, brandModels);
+                
+                // Populate model dropdown with only available models for this brand
+                brandModels.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    modelFilter.appendChild(option);
+                });
+                
+                // Reset model selection when brand changes
+                modelFilter.value = '';
+            }
+            
+            // Update registration dropdown with cars from selected brand only
+            let filteredCars = allCars;
+            if (selectedBrand) {
+                filteredCars = filteredCars.filter(car => car.brand === selectedBrand);
+                console.log(`🔍 Filtered by brand ${selectedBrand}:`, filteredCars.length, 'cars');
+            }
+            
+            // Update registration dropdown with filtered cars
+            const registrationFilter = document.getElementById('registrationFilter');
+            registrationFilter.innerHTML = '<option value="">Select Registration</option>';
+            
+            filteredCars.forEach(car => {
+                const option = document.createElement('option');
+                option.value = car.registration_number;
+                option.textContent = `${car.registration_number} - ${car.brand} ${car.model}`;
+                registrationFilter.appendChild(option);
+            });
+            
+            console.log(`📋 Cars after brand filter:`, filteredCars.length);
+            
+            // Update filter status
+            updateFilterStatus();
+        }
+
+        // Select car by registration number from dropdown
+        function selectCarByRegistration() {
+            const selectedRegistration = document.getElementById('registrationFilter').value;
+            if (selectedRegistration) {
+                const car = allCars.find(c => c.registration_number === selectedRegistration);
+                if (car) {
+                    displayCarInfo(car);
+                    currentCarId = car.id;
+                    currentRegistrationNumber = car.registration_number;
+                    showUploadSection();
+                }
+            }
+        }
+
+        // Search cars by text input
+        function searchCars() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            if (!searchTerm) {
+                populateDropdowns(allCars);
+                return;
+            }
+            
+            const filteredCars = allCars.filter(car => 
+                car.brand.toLowerCase().includes(searchTerm) ||
+                car.model.toLowerCase().includes(searchTerm) ||
+                car.variant.toLowerCase().includes(searchTerm) ||
+                car.registration_number.toLowerCase().includes(searchTerm)
+            );
+            
+            populateDropdowns(filteredCars);
+        }
+
+        // Update filter status display
+        function updateFilterStatus() {
+            const selectedBrand = document.getElementById('brandFilter').value;
+            const selectedModel = document.getElementById('modelFilter').value;
+            
+            // Count filtered cars
+            let filteredCars = allCars;
+            if (selectedBrand) {
+                filteredCars = filteredCars.filter(car => car.brand === selectedBrand);
+            }
+            if (selectedModel) {
+                filteredCars = filteredCars.filter(car => car.model === selectedModel);
+            }
+            
+            // Update display
+            document.getElementById('currentBrand').textContent = selectedBrand || 'All';
+            document.getElementById('currentModel').textContent = selectedModel || 'All';
+            document.getElementById('carsCount').textContent = filteredCars.length;
+            
+            // Show/hide filter status
+            if (selectedBrand || selectedModel) {
+                document.getElementById('filterStatus').style.display = 'block';
+            } else {
+                document.getElementById('filterStatus').style.display = 'none';
+            }
+        }
+
+        // Handle model dropdown change
+        function onModelChange() {
+            const selectedBrand = document.getElementById('brandFilter').value;
+            const selectedModel = document.getElementById('modelFilter').value;
+            
+            console.log(`🔄 Model changed to: ${selectedModel}`);
+            
+            let filteredCars = allCars;
+            
+            if (selectedBrand) {
+                filteredCars = filteredCars.filter(car => car.brand === selectedBrand);
+            }
+            
+            if (selectedModel) {
+                filteredCars = filteredCars.filter(car => car.model === selectedModel);
+            }
+            
+            // Update registration dropdown with filtered cars
+            const registrationFilter = document.getElementById('registrationFilter');
+            registrationFilter.innerHTML = '<option value="">Select Registration</option>';
+            
+            filteredCars.forEach(car => {
+                const option = document.createElement('option');
+                option.value = car.registration_number;
+                option.textContent = `${car.registration_number} - ${car.brand} ${car.model}`;
+                registrationFilter.appendChild(option);
+            });
+            
+            console.log(`📋 Cars after model filter:`, filteredCars.length);
+            
+            // Update filter status
+            updateFilterStatus();
+        }
+
+        // Clear all filters and reset dropdowns
+        function clearFilters() {
+            document.getElementById('brandFilter').value = '';
+            document.getElementById('modelFilter').value = '';
+            document.getElementById('searchInput').value = '';
+            
+            // Reset model dropdown to show no options
+            document.getElementById('modelFilter').innerHTML = '<option value="">All Models</option>';
+            
+            // Reset registration dropdown to show all cars
+            const registrationFilter = document.getElementById('registrationFilter');
+            registrationFilter.innerHTML = '<option value="">Select Registration</option>';
+            
+            allCars.forEach(car => {
+                const option = document.createElement('option');
+                option.value = car.registration_number;
+                option.textContent = `${car.registration_number} - ${car.brand} ${car.model}`;
+                registrationFilter.appendChild(option);
+            });
+            
+            console.log('🧹 Filters cleared, showing all cars:', allCars.length);
+        }
+
+        // Search car by registration number (quick search)
+        async function searchCarByRegistration() {
+            const registrationNumber = document.getElementById('registrationNumber').value.trim();
+            
+            if (!registrationNumber) {
+                alert('Please enter a registration number');
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch(`/api/cars?registration=${registrationNumber}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const cars = await response.json();
+                    const car = cars.find(c => c.registration_number === registrationNumber);
+                    
+                    if (car) {
+                        displayCarInfo(car);
+                        currentCarId = car.id;
+                        currentRegistrationNumber = car.registration_number;
+                        showUploadSection();
+                    } else {
+                        alert('Car not found with this registration number');
+                        hideCarInfo();
+                    }
+                } else {
+                    alert('Error searching for car');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                alert('An error occurred while searching');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            window.location.href = '/';
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+            // Load cars after authentication check
+            setTimeout(() => {
+                if (localStorage.getItem('authToken')) {
+                    loadCars();
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

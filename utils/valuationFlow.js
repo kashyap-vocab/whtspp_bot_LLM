@@ -1,5 +1,5 @@
 const { getAllBrands, getModelsByBrand } = require('./carData');
-const pool = require('../db');
+const { pool } = require('../db');
 
 const YEAR_OPTIONS = [
   "2024", "2023", "2022", "2021", "2020", "Older than 2020"

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Valuations - AutoSherpa</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 5px 0;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+        }
+        .sidebar .nav-link i {
+            width: 20px;
+            margin-right: 10px;
+        }
+        .main-content {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .valuation-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+            margin-bottom: 20px;
+        }
+        .valuation-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        .status-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            color: #2c3e50 !important;
+        }
+        .stats-card {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .filter-section {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        .car-details {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 px-0 sidebar">
+                <div class="p-3">
+                    <h4 class="text-center mb-4">
+                        <i class="fas fa-car me-2"></i>AutoSherpa
+                    </h4>
+                    
+                    <nav class="nav flex-column">
+                        <a class="nav-link" href="/dashboard">
+                            <i class="fas fa-tachometer-alt"></i>Dashboard
+                        </a>
+                        <a class="nav-link" href="/upload-cars">
+                            <i class="fas fa-upload"></i>Upload Cars
+                        </a>
+                        <a class="nav-link" href="/upload-images">
+                            <i class="fas fa-images"></i>Upload Images
+                        </a>
+                        <a class="nav-link" href="/view-cars">
+                            <i class="fas fa-car-side"></i>View Cars
+                        </a>
+                        <a class="nav-link" href="/test-drive-bookings">
+                            <i class="fas fa-calendar-check"></i>Test Drive Bookings
+                        </a>
+                        <a class="nav-link active" href="/car-valuations">
+                            <i class="fas fa-calculator"></i>Car Valuations
+                        </a>
+                    </nav>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="text-center">
+                        <button class="btn btn-outline-light btn-sm" onclick="logout()">
+                            <i class="fas fa-sign-out-alt me-2"></i>Logout
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 main-content">
+                <!-- Top Navigation -->
+                <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+                    <div class="container-fluid">
+                        <span class="navbar-brand">Car Valuations</span>
+                        <div class="navbar-nav ms-auto">
+                            <span class="navbar-text me-3">
+                                Welcome, <span id="userName">Dealer</span>
+                            </span>
+                        </div>
+                    </div>
+                </nav>
+
+                <div class="p-4">
+                    <!-- Statistics Cards -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="stats-card">
+                                <h3 id="totalValuations">0</h3>
+                                <p class="mb-0">Total Valuations</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stats-card">
+                                <h3 id="todayValuations">0</h3>
+                                <p class="mb-0">Today's Valuations</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stats-card">
+                                <h3 id="weekValuations">0</h3>
+                                <p class="mb-0">This Week</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stats-card">
+                                <h3 id="monthValuations">0</h3>
+                                <p class="mb-0">This Month</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="filter-section">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <label class="form-label">Date Range</label>
+                                <select class="form-select" id="dateFilter" onchange="filterValuations()">
+                                    <option value="all">All Dates</option>
+                                    <option value="today">Today</option>
+                                    <option value="week">This Week</option>
+                                    <option value="month">This Month</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Brand</label>
+                                <select class="form-select" id="brandFilter" onchange="filterValuations()">
+                                    <option value="">All Brands</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Search</label>
+                                <input type="text" class="form-control" id="searchInput" 
+                                       placeholder="Search by name, phone, or car details" onkeyup="filterValuations()">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-primary" onclick="resetFilters()">
+                                        <i class="fas fa-refresh me-2"></i>Reset Filters
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Valuations List -->
+                    <div id="valuationsList">
+                        <!-- Valuations will be populated here -->
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="loadingState" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3 text-muted">Loading car valuations...</p>
+                    </div>
+
+                    <!-- No Valuations State -->
+                    <div id="noValuationsState" class="text-center py-5" style="display: none;">
+                        <i class="fas fa-calculator fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No car valuations found</h5>
+                        <p class="text-muted">Car valuations will appear here once customers request valuations through the WhatsApp bot.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Valuation Details Modal -->
+    <div class="modal fade" id="valuationDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Car Valuation Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="valuationModalBody">
+                    <!-- Valuation details will be populated here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let allValuations = [];
+        let filteredValuations = [];
+
+        // Check authentication
+        function checkAuth() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Load user data
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            document.getElementById('userName').textContent = userData.username || 'Dealer';
+        }
+
+        // Load car valuations
+        async function loadValuations() {
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/car-valuations', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    allValuations = await response.json();
+                    filteredValuations = [...allValuations];
+                    populateFilters();
+                    displayValuations();
+                    updateStats();
+                } else {
+                    console.error('Failed to load valuations');
+                }
+            } catch (error) {
+                console.error('Error loading valuations:', error);
+            } finally {
+                document.getElementById('loadingState').style.display = 'none';
+            }
+        }
+
+        // Populate filter options
+        function populateFilters() {
+            const brands = [...new Set(allValuations.map(v => v.brand).filter(Boolean))].sort();
+            const brandFilter = document.getElementById('brandFilter');
+            
+            brands.forEach(brand => {
+                const option = document.createElement('option');
+                option.value = brand;
+                option.textContent = brand;
+                brandFilter.appendChild(option);
+            });
+        }
+
+        // Display valuations
+        function displayValuations() {
+            const container = document.getElementById('valuationsList');
+            
+            if (filteredValuations.length === 0) {
+                container.style.display = 'none';
+                document.getElementById('noValuationsState').style.display = 'block';
+                return;
+            }
+            
+            container.style.display = 'block';
+            document.getElementById('noValuationsState').style.display = 'none';
+            
+            container.innerHTML = filteredValuations.map(valuation => createValuationCard(valuation)).join('');
+        }
+
+        // Create valuation card
+        function createValuationCard(valuation) {
+            const createdDate = new Date(valuation.created_at);
+            const formattedDate = createdDate.toLocaleDateString('en-IN', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            return `
+                <div class="valuation-card p-4 position-relative">
+                    <span class="status-badge badge bg-info">Valuation Request</span>
+                    
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h5 class="mb-3">
+                                <i class="fas fa-calculator me-2 text-info"></i>
+                                ${valuation.brand || 'Unknown Brand'} ${valuation.model || 'Unknown Model'}
+                            </h5>
+                            
+                            <div class="car-details">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Year:</strong> ${valuation.year || 'N/A'}</p>
+                                        <p class="mb-1"><strong>Fuel:</strong> ${valuation.fuel_type || 'N/A'}</p>
+                                        <p class="mb-1"><strong>Mileage:</strong> ${valuation.mileage ? valuation.mileage.toLocaleString() + ' km' : 'N/A'}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Owner:</strong> ${valuation.owner || 'N/A'}</p>
+                                        <p class="mb-1"><strong>Condition:</strong> ${valuation.condition || 'N/A'}</p>
+                                        <p class="mb-1"><strong>Requested:</strong> ${formattedDate}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <p class="mb-1"><strong>Customer:</strong> ${valuation.name || 'Not provided'}</p>
+                                    <p class="mb-1"><strong>Phone:</strong> ${valuation.phone || 'Not provided'}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p class="mb-1"><strong>Location:</strong> ${valuation.location || 'Not provided'}</p>
+                                    <p class="mb-1"><strong>Estimated Value:</strong> <span class="text-success fw-bold">₹${valuation.estimated_value ? valuation.estimated_value.toLocaleString() : 'To be calculated'}</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4 text-end">
+                            <button class="btn btn-outline-info btn-sm" onclick="showValuationDetails(${valuation.id})">
+                                <i class="fas fa-eye me-1"></i>View Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Filter valuations
+        function filterValuations() {
+            const dateFilter = document.getElementById('dateFilter').value;
+            const brandFilter = document.getElementById('brandFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            filteredValuations = allValuations.filter(valuation => {
+                // Date filter
+                let dateMatch = true;
+                if (dateFilter !== 'all') {
+                    const createdDate = new Date(valuation.created_at);
+                    const today = new Date();
+                    
+                    if (dateFilter === 'today') {
+                        dateMatch = createdDate.toDateString() === today.toDateString();
+                    } else if (dateFilter === 'week') {
+                        const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                        dateMatch = createdDate >= weekAgo;
+                    } else if (dateFilter === 'month') {
+                        const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                        dateMatch = createdDate >= monthAgo;
+                    }
+                }
+                
+                // Brand filter
+                const brandMatch = !brandFilter || valuation.brand === brandFilter;
+                
+                // Search filter
+                const searchMatch = !searchTerm || 
+                    (valuation.name && valuation.name.toLowerCase().includes(searchTerm)) ||
+                    (valuation.phone && valuation.phone.toLowerCase().includes(searchTerm)) ||
+                    (valuation.brand && valuation.brand.toLowerCase().includes(searchTerm)) ||
+                    (valuation.model && valuation.model.toLowerCase().includes(searchTerm));
+                
+                return dateMatch && brandMatch && searchMatch;
+            });
+            
+            displayValuations();
+        }
+
+        // Reset filters
+        function resetFilters() {
+            document.getElementById('dateFilter').value = 'all';
+            document.getElementById('brandFilter').value = '';
+            document.getElementById('searchInput').value = '';
+            
+            filteredValuations = [...allValuations];
+            displayValuations();
+        }
+
+        // Update statistics
+        function updateStats() {
+            const today = new Date();
+            const todayValuations = allValuations.filter(valuation => {
+                const createdDate = new Date(valuation.created_at);
+                return createdDate.toDateString() === today.toDateString();
+            }).length;
+            
+            const weekValuations = allValuations.filter(valuation => {
+                const createdDate = new Date(valuation.created_at);
+                const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                return createdDate >= weekAgo;
+            }).length;
+            
+            const monthValuations = allValuations.filter(valuation => {
+                const createdDate = new Date(valuation.created_at);
+                const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                return createdDate >= monthAgo;
+            }).length;
+            
+            document.getElementById('totalValuations').textContent = allValuations.length;
+            document.getElementById('todayValuations').textContent = todayValuations;
+            document.getElementById('weekValuations').textContent = weekValuations;
+            document.getElementById('monthValuations').textContent = monthValuations;
+        }
+
+        // Show valuation details
+        function showValuationDetails(valuationId) {
+            const valuation = allValuations.find(v => v.id === valuationId);
+            if (!valuation) return;
+            
+            const createdDate = new Date(valuation.created_at);
+            const formattedDate = createdDate.toLocaleDateString('en-IN', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            document.getElementById('valuationModalBody').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Customer Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Name:</strong></td><td>${valuation.name || 'Not provided'}</td></tr>
+                            <tr><td><strong>Phone:</strong></td><td>${valuation.phone || 'Not provided'}</td></tr>
+                            <tr><td><strong>Location:</strong></td><td>${valuation.location || 'Not provided'}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Car Details</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Brand:</strong></td><td>${valuation.brand || 'Not specified'}</td></tr>
+                            <tr><td><strong>Model:</strong></td><td>${valuation.model || 'Not specified'}</td></tr>
+                            <tr><td><strong>Year:</strong></td><td>${valuation.year || 'Not specified'}</td></tr>
+                            <tr><td><strong>Fuel Type:</strong></td><td>${valuation.fuel_type || 'Not specified'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <h6>Additional Details</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Mileage:</strong></td><td>${valuation.mileage ? valuation.mileage.toLocaleString() + ' km' : 'Not specified'}</td></tr>
+                            <tr><td><strong>Owner:</strong></td><td>${valuation.owner || 'Not specified'}</td></tr>
+                            <tr><td><strong>Condition:</strong></td><td>${valuation.condition || 'Not specified'}</td></tr>
+                            <tr><td><strong>Estimated Value:</strong></td><td><span class="text-success fw-bold">₹${valuation.estimated_value ? valuation.estimated_value.toLocaleString() : 'To be calculated'}</span></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Request Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Request ID:</strong></td><td>${valuation.id}</td></tr>
+                            <tr><td><strong>Requested On:</strong></td><td>${formattedDate}</td></tr>
+                            <tr><td><strong>Status:</strong></td><td><span class="badge bg-info">Valuation Request</span></td></tr>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('valuationDetailsModal'));
+            modal.show();
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            window.location.href = '/';
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+            loadValuations();
+        });
+    </script>
+</body>
+</html>
