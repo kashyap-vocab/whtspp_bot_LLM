@@ -55,11 +55,26 @@ CREATE TABLE IF NOT EXISTS bot_confirmations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create callback_requests table for WhatsApp bot contact flow
+CREATE TABLE IF NOT EXISTS callback_requests (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    reason TEXT,
+    preferred_time VARCHAR(50),
+    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'contacted', 'completed'
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_cars_registration_number ON cars(registration_number);
 CREATE INDEX IF NOT EXISTS idx_cars_dealer_id ON cars(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_car_images_car_id ON car_images(car_id);
 CREATE INDEX IF NOT EXISTS idx_bot_confirmations_car_id ON bot_confirmations(car_id);
+CREATE INDEX IF NOT EXISTS idx_callback_requests_phone ON callback_requests(phone);
+CREATE INDEX IF NOT EXISTS idx_callback_requests_status ON callback_requests(status);
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -75,4 +90,7 @@ CREATE TRIGGER update_dealers_updated_at BEFORE UPDATE ON dealers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_cars_updated_at BEFORE UPDATE ON cars
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_callback_requests_updated_at BEFORE UPDATE ON callback_requests
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

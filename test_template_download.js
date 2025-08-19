@@ -9,8 +9,8 @@ async function testTemplateDownload() {
         console.log('📝 Logging in to get authentication token...');
         
         const loginResponse = await axios.post('http://localhost:3000/api/login', {
-            username: 'admin',
-            password: 'admin123'
+            username: 'testuser',
+            password: 'testpass123'
         });
         
         if (loginResponse.data.token) {

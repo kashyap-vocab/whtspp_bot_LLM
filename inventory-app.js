@@ -91,11 +91,46 @@ async function initializeDatabase() {
                 )
             `);
             
+            await client.query(`
+                CREATE TABLE callback_requests (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    phone VARCHAR(20) NOT NULL,
+                    reason TEXT,
+                    preferred_time VARCHAR(50),
+                    status VARCHAR(20) DEFAULT 'pending',
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            
             // Create indexes
             await client.query('CREATE INDEX idx_cars_registration_number ON cars(registration_number)');
             await client.query('CREATE INDEX idx_cars_dealer_id ON cars(dealer_id)');
             await client.query('CREATE INDEX idx_car_images_car_id ON car_images(car_id)');
             await client.query('CREATE INDEX idx_bot_confirmations_car_id ON bot_confirmations(car_id)');
+            await client.query('CREATE INDEX idx_callback_requests_phone ON callback_requests(phone)');
+            await client.query('CREATE INDEX idx_callback_requests_status ON callback_requests(status)');
+            
+            // Create function for updating timestamps
+            await client.query(`
+                CREATE OR REPLACE FUNCTION update_updated_at_column()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.updated_at = CURRENT_TIMESTAMP;
+                    RETURN NEW;
+                END;
+                $$ language 'plpgsql';
+            `);
+            
+            // Create triggers for updated_at
+            await client.query(`
+                DROP TRIGGER IF EXISTS update_callback_requests_updated_at ON callback_requests;
+                CREATE TRIGGER update_callback_requests_updated_at 
+                BEFORE UPDATE ON callback_requests
+                FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+            `);
             
             console.log('✅ Database tables created successfully');
         }

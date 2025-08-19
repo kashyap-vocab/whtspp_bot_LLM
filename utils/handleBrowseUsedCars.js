@@ -482,30 +482,8 @@ async function getCarDisplayChunk(session, pool) {
           image: { link: imageUrl, caption: caption }
         });
         
-        // Add additional images if available (up to 3 total)
-        for (let j = 1; j < Math.min(validImages.length, 3); j++) {
-          const additionalImage = validImages[j];
-          
-          // Use the new naming convention for additional images too
-          let additionalImageUrl;
-          if (additionalImage.sequence && car.registration_number) {
-            additionalImageUrl = constructImageUrl(car.registration_number, additionalImage.sequence);
-          } else {
-            // Fall back to the old path-based method
-            if (additionalImage.path.startsWith('uploads/')) {
-              additionalImageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/${additionalImage.path}`;
-            } else {
-              additionalImageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/uploads/${additionalImage.path}`;
-            }
-          }
-          
-          console.log(`📸 Adding additional car image: ${additionalImageUrl}`);
-          
-          messages.push({
-            type: 'image',
-            image: { link: additionalImageUrl, caption: `${car.brand} ${car.model} - Additional View` }
-          });
-        }
+        // Removed additional images to show only one image with details
+        // Previously, we sent up to 3 images per car. Now, we only send the first image.
       }
     } else {
       // No images available - show text-only message with enhanced caption

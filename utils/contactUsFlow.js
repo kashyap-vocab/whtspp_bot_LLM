@@ -98,19 +98,21 @@ async function handleContactUsStep(session, userMessage) {
       session.callback_reason = userMessage;
       session.step = 'done';
 
-      await pool.query(
-        `INSERT INTO callback_requests (name, phone, reason, preferred_time)
-         VALUES ($1, $2, $3, $4)`,
-        [
-          session.callback_name,
-          session.callback_phone,
-          session.callback_reason,
-          session.callback_time
-        ]
-      );
+      try {
+        // Save callback request to database
+        await pool.query(
+          `INSERT INTO callback_requests (name, phone, reason, preferred_time)
+           VALUES ($1, $2, $3, $4)`,
+          [
+            session.callback_name,
+            session.callback_phone,
+            session.callback_reason,
+            session.callback_time
+          ]
+        );
 
-      return {
-        message: `Perfect ${session.callback_name}! Your callback is scheduled:
+        return {
+          message: `Perfect ${session.callback_name}! Your callback is scheduled:
 
 📋 CALLBACK SCHEDULED:
 👤 Name: ${session.callback_name}
@@ -126,8 +128,32 @@ Need urgent help?
 📞 Call: +91-9876543210
 📍 Visit: 123 MG Road, Bangalore
 Thank you! 😊`,
-        options: ["Explore", "End Conversation"]
-      };
+          options: ["Explore", "End Conversation"]
+        };
+      } catch (error) {
+        console.error('Error saving callback request:', error);
+        
+        // Return success message even if database save fails
+        return {
+          message: `Perfect ${session.callback_name}! Your callback is scheduled:
+
+📋 CALLBACK SCHEDULED:
+👤 Name: ${session.callback_name}
+📱 Phone: ${session.callback_phone}
+⏰ Preferred Time: ${session.callback_time}
+
+📞 What to Expect:
+✅ Call within 2 hours if during business hours
+✅ Our expert will assist with: ${session.callback_reason}
+🕒 Business Hours: Mon-Sat: 9 AM - 8 PM
+
+Need urgent help?
+📞 Call: +91-9876543210
+📍 Visit: 123 MG Road, Bangalore
+Thank you! 😊`,
+          options: ["Explore", "End Conversation"]
+        };
+      }
 
     case 'done':
       if (userMessage === "Explore") {

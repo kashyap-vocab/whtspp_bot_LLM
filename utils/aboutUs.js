@@ -162,7 +162,7 @@ Ready to visit?`,
 ✅ Documentation help for resale or exchange
 
 Want to explore a service in detail?`,
-          options: ["🛠️ Book a Service", "🚗 Browse Used Cars", "📞 Talk to Our Team", "🏠 Back to main menu"]
+          options: ["🛠️ Book a Service", "🚗 Browse Used Cars", "🏠 Back to main menu"]
         };
       }
 
@@ -225,7 +225,7 @@ Would you like to...`,
 💡 Pro Tip: Call during business hours for immediate assistance!
 
 Need anything else?`,
-          options: ["🚗 Browse Used Cars", "📞 Contact Our Team", "🏠 Back to main menu"]
+          options: ["🚗 Browse Used Cars", "🏠 Back to main menu"]
         };
       }
 
