@@ -43,7 +43,7 @@ async function handleCarValuationStep(session, userMessage) {
       session.step = 'brand';
       return {
         message: "Great! I'll help you get a valuation for your car. Let's start with some basic details.\n\nFirst, which brand is your car?",
-        options: [...await getAllBrands(), "Other brands"]
+        options: [...await getAllBrands(pool), "Other brands"]
       };
 
     case 'brand':
@@ -53,7 +53,7 @@ async function handleCarValuationStep(session, userMessage) {
       } else {
         session.brand = userMessage;
         session.step = 'model';
-        const models = await getModelsByBrand(userMessage);
+        const models = await getModelsByBrand(pool, userMessage);
         return {
           message: `Perfect! Which ${userMessage} model do you have?`,
           options: [...models, `Other ${userMessage} models`]

@@ -160,27 +160,9 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
     // If we have messages array (for car images and buttons), send them first
     if (messages && messages.length > 0) {
       console.log("📸 Sending car messages...");
-
-      // Deduplicate any identical messages to avoid double-sending
-      const uniqueMessages = [];
-      const seen = new Set();
-      for (const m of messages) {
-        try {
-          const key = JSON.stringify(m);
-          if (!seen.has(key)) {
-            seen.add(key);
-            uniqueMessages.push(m);
-          } else {
-            console.log("🔁 Skipping duplicate message payload");
-          }
-        } catch (_) {
-          // If message cannot be stringified, keep it to avoid over-filtering
-          uniqueMessages.push(m);
-        }
-      }
-
-      for (let i = 0; i < uniqueMessages.length; i++) {
-        const msg = uniqueMessages[i];
+      
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
         try {
           // Validate individual message
           if (!msg || !msg.type) {
@@ -203,7 +185,7 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
             }
           });
           
-          console.log(`✅ Message ${i + 1}/${uniqueMessages.length} sent successfully`);
+          console.log(`✅ Message ${i + 1}/${messages.length} sent successfully`);
 
           // Increase delay to ensure proper message ordering
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -217,8 +199,7 @@ async function sendWhatsAppMessage(to, text, options = [], messages = []) {
       }
       
       // If we sent messages array, check if we need to send a follow-up message with options
-      const hasSameTextInMessages = uniqueMessages.some(m => m.type === 'text' && m.text && typeof m.text.body === 'string' && m.text.body.trim() === text.trim());
-      if (text.trim().length > 0 && !hasSameTextInMessages && !text.startsWith("Here are some cars for you:")) {
+      if (text.trim().length > 0 && !text.startsWith("Here are some cars for you:")) {
         console.log("📸 Car images sent, sending follow-up message with options");
         // Continue to send the text message with options
       } else {

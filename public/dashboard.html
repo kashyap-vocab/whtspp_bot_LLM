@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Dashboard - AutoSherpa</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="/responsive.css" rel="stylesheet">
+
     <style>
         .sidebar {
             min-height: 100vh;
@@ -67,10 +67,7 @@
     </style>
 </head>
 <body>
-    <!-- Mobile Menu Toggle -->
-    <button class="mobile-menu-toggle d-block-mobile" onclick="toggleSidebar()">
-        <i class="fas fa-bars"></i>
-    </button>
+    
     
     <!-- Sidebar Overlay -->
     <div class="sidebar-overlay" onclick="closeSidebar()"></div>
@@ -138,7 +135,7 @@
 
                     <!-- Stats Cards -->
                     <div class="row g-4 mb-4">
-                        <div class="col-md-3 col-mobile-12">
+                        <div class="col-md-3 ">
                             <div class="stats-card p-4">
                                 <div class="d-flex align-items-center">
                                     <div class="stats-icon bg-primary me-3">
@@ -152,7 +149,7 @@
                             </div>
                         </div>
                         
-                        <div class="col-md-3 col-mobile-12">
+                        <div class="col-md-3 ">
                             <div class="stats-card p-4">
                                 <div class="d-flex align-items-center">
                                     <div class="stats-icon bg-success me-3">
@@ -166,7 +163,7 @@
                             </div>
                         </div>
                         
-                        <div class="col-md-3 col-mobile-12">
+                        <div class="col-md-3 ">
                             <div class="stats-card p-4">
                                 <div class="d-flex align-items-center">
                                     <div class="stats-icon bg-warning me-3">
@@ -180,7 +177,7 @@
                             </div>
                         </div>
                         
-                        <div class="col-md-3 col-mobile-12">
+                        <div class="col-md-3 ">
                             <div class="stats-card p-4">
                                 <div class="d-flex align-items-center">
                                     <div class="stats-icon bg-info me-3">
@@ -233,22 +230,22 @@
                                     <i class="fas fa-bolt me-2"></i>Quick Actions
                                 </h5>
                                 <div class="row g-3 quick-actions">
-                                    <div class="col-md-3 col-mobile-12">
+                                    <div class="col-md-3 ">
                                         <a href="/upload-cars" class="btn btn-primary w-100">
                                             <i class="fas fa-upload me-2"></i>Upload Excel
                                         </a>
                                     </div>
-                                    <div class="col-md-3 col-mobile-12">
+                                    <div class="col-md-3 ">
                                         <a href="/upload-images" class="btn btn-success w-100">
                                             <i class="fas fa-images me-2"></i>Add Images
                                         </a>
                                     </div>
-                                    <div class="col-md-3 col-mobile-12">
+                                    <div class="col-md-3 ">
                                         <a href="/view-cars" class="btn btn-info w-100">
                                             <i class="fas fa-search me-2"></i>View Cars
                                         </a>
                                     </div>
-                                    <div class="col-md-3 col-mobile-12">
+                                    <div class="col-md-3 ">
                                         <a href="/test-drive-bookings" class="btn btn-warning w-100">
                                             <i class="fas fa-calendar-check me-2"></i>Test Drive Bookings
                                         </a>
@@ -413,30 +410,6 @@
             window.location.href = '/';
         }
 
-        // Mobile sidebar functions
-        function toggleSidebar() {
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
-            
-            sidebar.classList.toggle('show');
-            overlay.classList.toggle('show');
-        }
-        
-        function closeSidebar() {
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
-            
-            sidebar.classList.remove('show');
-            overlay.classList.remove('show');
-        }
-        
-        // Close sidebar when clicking on a nav link on mobile
-        document.addEventListener('click', function(e) {
-            if (e.target.classList.contains('nav-link') && window.innerWidth < 768) {
-                closeSidebar();
-            }
-        });
-        
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
             checkAuth();

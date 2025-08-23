@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS cars (
     brand VARCHAR(50) NOT NULL,
     model VARCHAR(50) NOT NULL,
     variant VARCHAR(100),
+    type VARCHAR(50), -- Added type column for car body type (SUV, Sedan, Hatchback, etc.)
     year INTEGER,
     fuel_type VARCHAR(20),
     transmission VARCHAR(20),

@@ -52,6 +52,7 @@ async function initializeDatabase() {
                     brand VARCHAR(50) NOT NULL,
                     model VARCHAR(50) NOT NULL,
                     variant VARCHAR(100),
+                    type VARCHAR(50),
                     year INTEGER,
                     fuel_type VARCHAR(20),
                     transmission VARCHAR(20),
@@ -467,6 +468,7 @@ app.post('/api/upload-cars', authenticateToken, upload.single('excelFile'), asyn
                 'brand': ['Make'],
                 'model': ['Model'],
                 'variant': ['Variant'],
+                'type': ['Type', 'Body Type', 'Car Type'],
                 'year': ['Manufacturing Year'],
                 'fuel_type': ['Fuel Type'],
                 'transmission': ['Transmission Type'],
@@ -568,10 +570,10 @@ app.post('/api/upload-cars', authenticateToken, upload.single('excelFile'), asyn
                 // Insert car with mapped values
                 const carResult = await pool.query(
                     `INSERT INTO cars (
-                        dealer_id, registration_number, brand, model, variant, year, 
+                        dealer_id, registration_number, brand, model, variant, type, year, 
                         fuel_type, transmission, mileage, price, color, engine_cc, 
                         power_bhp, seats, description
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
                     RETURNING id, registration_number`,
                     [
                         req.user.id, 
@@ -579,6 +581,7 @@ app.post('/api/upload-cars', authenticateToken, upload.single('excelFile'), asyn
                         brand, 
                         model, 
                         variant,
+                        getValue('type') || null,
                         year ? parseInt(year) : null, 
                         fuelType, 
                         transmission, 
@@ -634,6 +637,7 @@ app.get('/api/download-template', authenticateToken, (req, res) => {
                 'Make': 'Honda',
                 'Model': 'City',
                 'Variant': 'VX CVT',
+                'Type': 'Sedan',
                 'Manufacturing Year': '2022',
                 'Fuel Type': 'Petrol',
                 'Transmission Type': 'CVT',
@@ -655,6 +659,7 @@ app.get('/api/download-template', authenticateToken, (req, res) => {
                 'Make': 'Hyundai',
                 'Model': 'Creta',
                 'Variant': 'SX Executive',
+                'Type': 'SUV',
                 'Manufacturing Year': '2021',
                 'Fuel Type': 'Diesel',
                 'Transmission Type': 'Manual',
@@ -1193,6 +1198,93 @@ async function cleanupUndefinedDirectory() {
         console.error('❌ Error during undefined directory cleanup:', error);
     }
 }
+
+
+
+// Upload car images API route
+app.post('/api/upload-car-images', authenticateToken, upload.array('images', 4), async (req, res) => {
+    try {
+        const { carId, registrationNumber } = req.body;
+        const sequences = req.body.sequences;
+        
+        if (!carId || !registrationNumber || !req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'Missing required data' });
+        }
+        
+        // Verify car belongs to the authenticated dealer
+        const carResult = await pool.query(
+            'SELECT id FROM cars WHERE id = $1 AND dealer_id = $2',
+            [carId, req.user.id]
+        );
+        
+        if (carResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Car not found' });
+        }
+        
+        const carDir = path.join('uploads', 'cars', registrationNumber);
+        
+        // Create car directory if it doesn't exist
+        if (!fs.existsSync(carDir)) {
+            fs.mkdirSync(carDir, { recursive: true });
+        }
+        
+        let uploadedCount = 0;
+        const uploadedFiles = [];
+        
+        // Process each uploaded image
+        for (let i = 0; i < req.files.length; i++) {
+            const file = req.files[i];
+            const sequence = parseInt(sequences[i]) || (i + 1);
+            
+            // Generate filename with registration number and sequence
+            const fileExtension = path.extname(file.originalname);
+            const filename = `${registrationNumber}_${sequence}${fileExtension}`;
+            const filePath = path.join(carDir, filename);
+            
+            try {
+                // Move file to car directory
+                fs.renameSync(file.path, filePath);
+                
+                // Save image record to database
+                await pool.query(
+                    'INSERT INTO car_images (car_id, image_path, image_type) VALUES ($1, $2, $3)',
+                    [carId, path.join('uploads', 'cars', registrationNumber, filename), getImageType(sequence)]
+                );
+                
+                uploadedCount++;
+                uploadedFiles.push(filename);
+                
+                console.log(`✅ Uploaded image: ${filename} for car ${registrationNumber}`);
+            } catch (error) {
+                console.error(`❌ Error processing image ${filename}:`, error);
+            }
+        }
+        
+        if (uploadedCount === 0) {
+            return res.status(500).json({ error: 'Failed to upload any images' });
+        }
+        
+        res.json({
+            message: 'Images uploaded successfully',
+            uploadedCount,
+            uploadedFiles,
+            carId,
+            registrationNumber
+        });
+        
+    } catch (error) {
+        console.error('Upload car images error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Helper function to determine image type based on sequence
+function getImageType(sequence) {
+    const types = ['front', 'back', 'side', 'interior'];
+    return types[sequence - 1] || 'other';
+}
+
+
 
 // Start server
 async function startServer() {

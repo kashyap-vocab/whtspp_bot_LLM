@@ -8,9 +8,14 @@ const pool = require('../db');
 
 // Helper function to construct image URL using the new naming convention
 function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = null) {
-  const base = baseUrl || process.env.NGROK_URL || 'http://localhost:3000';
+  const base = baseUrl || process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
   const imagePath = `uploads/cars/${registrationNumber}/${registrationNumber}_${sequenceNumber}.jpg`;
   return `${base}/${imagePath}`;
+}
+
+// Helper function to check if an image URL is publicly accessible
+function isPubliclyAccessible(baseUrl) {
+  return baseUrl && !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1');
 }
 
 async function handleBrowseUsedCars(session, userMessage) {
@@ -414,18 +419,7 @@ async function getCarDisplayChunk(session, pool) {
   for (let i = 0; i < carsToShow.length; i++) {
     const car = carsToShow[i];
     
-    // Get car images from database
-    const { getCarImages } = require('./carData');
-    let carImages;
-    try {
-      carImages = await getCarImages(pool, car.id);
-      console.log(`📸 Retrieved ${carImages ? carImages.length : 0} images for car ${car.id}`);
-    } catch (error) {
-      console.error(`❌ Error fetching images for car ${car.id}:`, error);
-      carImages = [];
-    }
-    
-    // Also try to get images by registration number for the new naming convention
+    // Get car images by registration number for the new naming convention
     let imagesByRegistration = [];
     try {
       imagesByRegistration = await getCarImagesByRegistration(pool, car.registration_number);
@@ -434,8 +428,8 @@ async function getCarDisplayChunk(session, pool) {
       console.error(`❌ Error fetching images by registration for ${car.registration_number}:`, error);
     }
     
-    // Use images by registration if available, otherwise fall back to database images
-    const finalCarImages = imagesByRegistration.length > 0 ? imagesByRegistration : carImages;
+    // Use images by registration if available
+    const finalCarImages = imagesByRegistration;
     
     const caption =
       `🚗 ${car.brand} ${car.model} ${car.variant}\n` +
@@ -468,19 +462,29 @@ async function getCarDisplayChunk(session, pool) {
         } else {
           // Fall back to the old path-based method
           if (firstImage.path.startsWith('uploads/')) {
-            imageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/${firstImage.path}`;
+            imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/${firstImage.path}`;
           } else {
-            imageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/uploads/${firstImage.path}`;
+            imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/uploads/${firstImage.path}`;
           }
           console.log(`📸 Using fallback path method for image: ${imageUrl}`);
         }
         
-        console.log(`📸 Adding car image: ${imageUrl}`);
-        
-        messages.push({
-          type: 'image',
-          image: { link: imageUrl, caption: caption }
-        });
+        // Check if the image URL is publicly accessible
+        if (isPubliclyAccessible(imageUrl)) {
+          console.log(`📸 Adding car image (publicly accessible): ${imageUrl}`);
+          messages.push({
+            type: 'image',
+            image: { link: imageUrl, caption: caption }
+          });
+        } else {
+          console.log(`⚠️ Image URL not publicly accessible, falling back to text-only: ${imageUrl}`);
+          // Fall back to text-only message with enhanced caption
+          const enhancedCaption = caption + '\n\n📸 Images: Available but not publicly accessible. Please visit our website to view images.';
+          messages.push({
+            type: 'text',
+            text: { body: enhancedCaption }
+          });
+        }
         
         // Removed additional images to show only one image with details
         // Previously, we sent up to 3 images per car. Now, we only send the first image.
@@ -500,7 +504,7 @@ async function getCarDisplayChunk(session, pool) {
       
       // Try to find image in static images directory as fallback (only if no uploaded images)
       const staticImageFile = `${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_') + '.png';
-      const staticImageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/images/${staticImageFile}`;
+      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/images/${staticImageFile}`;
       
       console.log(`📸 Trying static image fallback: ${staticImageFile}`);
       
