@@ -9,7 +9,7 @@ const xlsx = require('xlsx');
 const PDFDocument = require('pdfkit');
 const pool = require('./db');
 
-// Cloudinary configuration
+// Cloudinary configuration for persistent image storage
 let cloudinary = null;
 let cloudinaryStorage = null;
 
@@ -24,12 +24,13 @@ if (process.env.CLOUDINARY_CLOUD_NAME) {
             api_secret: process.env.CLOUDINARY_API_SECRET
         });
         
-        console.log('☁️ Cloudinary configured successfully');
+        console.log('☁️ Cloudinary configured for persistent image storage');
     } catch (error) {
         console.log('⚠️ Cloudinary packages not installed, falling back to local storage');
+        console.log('💡 Install: npm install cloudinary multer-storage-cloudinary');
     }
 } else {
-    console.log('📁 Using local file storage (set CLOUDINARY_CLOUD_NAME to use Cloudinary)');
+    console.log('📁 Using local file storage (set CLOUDINARY_CLOUD_NAME for production)');
 }
 
 // Helper function to get image URL (works with both Cloudinary and local storage)
@@ -232,7 +233,7 @@ const upload = multer({
 let imageUploadStorage;
 
 if (cloudinary && cloudinaryStorage) {
-    // Use Cloudinary storage
+    // Use Cloudinary storage for persistent image storage
     imageUploadStorage = cloudinaryStorage.CloudinaryStorage({
         cloudinary: cloudinary,
         params: {
@@ -244,7 +245,7 @@ if (cloudinary && cloudinaryStorage) {
             ]
         }
     });
-    console.log('☁️ Using Cloudinary storage for images');
+    console.log('☁️ Using Cloudinary storage for persistent images');
 } else {
     // Use local storage as fallback
     imageUploadStorage = multer.diskStorage({
@@ -277,7 +278,7 @@ if (cloudinary && cloudinaryStorage) {
             cb(null, filename);
         }
     });
-    console.log('📁 Using local storage for images');
+    console.log('📁 Using local storage for images (fallback mode)');
 }
 
 const imageUpload = multer({
@@ -360,6 +361,11 @@ app.get('/test-api', (req, res) => {
 // Image test page for debugging
 app.get('/test-images', (req, res) => {
     res.sendFile(path.join(__dirname, 'test-images.html'));
+});
+
+// Upload test page for debugging
+app.get('/test-upload', (req, res) => {
+    res.sendFile(path.join(__dirname, 'test-upload.html'));
 });
 
 // Debug endpoint to check users in database
@@ -850,7 +856,7 @@ app.post('/api/upload-car-images', authenticateToken, imageUpload.array('images'
         console.log(`📸 Received imageIndices:`, parsedIndices);
         console.log(`📸 Received files:`, req.files.map(f => f.filename));
         
-        // Process uploaded images
+        // Process uploaded images (Cloudinary or local storage)
         for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
             const imageType = parsedTypes[i] || 'unknown';
@@ -1141,6 +1147,71 @@ app.get('/api/car-valuations/pdf', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('❌ Generate car valuations PDF error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// WhatsApp bot image fetching endpoint (no authentication required for bot access)
+app.get('/api/whatsapp/car-images/:registrationNumber', async (req, res) => {
+    try {
+        const { registrationNumber } = req.params;
+        
+        console.log(`📱 WhatsApp bot requesting images for car: ${registrationNumber}`);
+        
+        // Get car and its images from database
+        const carResult = await pool.query(`
+            SELECT c.*, 
+                   array_agg(ci.image_path) as image_paths,
+                   array_agg(ci.image_type) as image_types
+            FROM cars c
+            LEFT JOIN car_images ci ON c.id = ci.car_id
+            WHERE c.registration_number = $1
+            GROUP BY c.id
+        `, [registrationNumber]);
+        
+        if (carResult.rows.length === 0) {
+            return res.status(404).json({ 
+                error: 'Car not found',
+                message: `No car found with registration number: ${registrationNumber}`
+            });
+        }
+        
+        const car = carResult.rows[0];
+        
+        // Format response for WhatsApp bot
+        const response = {
+            car: {
+                id: car.id,
+                registration_number: car.registration_number,
+                brand: car.brand,
+                model: car.model,
+                year: car.year,
+                price: car.price,
+                description: car.description
+            },
+            images: []
+        };
+        
+        // Process images if they exist
+        if (car.image_paths && car.image_paths[0] !== null) {
+            car.image_paths.forEach((path, index) => {
+                const type = car.image_types[index] || 'unknown';
+                response.images.push({
+                    url: getImageUrl(path),
+                    type: type,
+                    sequence: index + 1
+                });
+        });
+        }
+        
+        console.log(`📱 WhatsApp bot response: ${response.images.length} images for ${registrationNumber}`);
+        res.json(response);
+        
+    } catch (error) {
+        console.error(`❌ WhatsApp bot image fetch error: ${error.message}`);
+        res.status(500).json({ 
+            error: 'Failed to fetch car images',
+            message: error.message 
+        });
     }
 });
 
