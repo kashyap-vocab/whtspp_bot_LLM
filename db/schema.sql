@@ -69,6 +69,18 @@ CREATE TABLE IF NOT EXISTS callback_requests (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create test_drives table for test drive bookings
+CREATE TABLE IF NOT EXISTS test_drives (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(100),
+    car VARCHAR(100),
+    datetime TIMESTAMP,
+    name VARCHAR(100),
+    phone VARCHAR(20),
+    has_dl BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_cars_registration_number ON cars(registration_number);
 CREATE INDEX IF NOT EXISTS idx_cars_dealer_id ON cars(dealer_id);
@@ -76,6 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_car_images_car_id ON car_images(car_id);
 CREATE INDEX IF NOT EXISTS idx_bot_confirmations_car_id ON bot_confirmations(car_id);
 CREATE INDEX IF NOT EXISTS idx_callback_requests_phone ON callback_requests(phone);
 CREATE INDEX IF NOT EXISTS idx_callback_requests_status ON callback_requests(status);
+CREATE INDEX IF NOT EXISTS idx_test_drives_created_at ON test_drives(created_at);
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

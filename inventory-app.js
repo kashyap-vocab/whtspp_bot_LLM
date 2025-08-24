@@ -953,6 +953,84 @@ app.get('/api/car-valuations', authenticateToken, async (req, res) => {
     }
 });
 
+// API endpoint to generate PDF for test drive bookings
+app.get('/api/test-drive-bookings/pdf', authenticateToken, async (req, res) => {
+    try {
+        console.log(`📊 Generating PDF for test drive bookings...`);
+        
+        // Get all test drive bookings
+        const result = await pool.query(
+            `SELECT * FROM test_drives ORDER BY created_at DESC`
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No test drive bookings found' });
+        }
+        
+        const pdfPath = await generateTestDriveBookingsPDF(result.rows);
+        
+        res.download(pdfPath, 'test-drive-bookings.pdf', (err) => {
+            if (err) {
+                console.error('Error sending PDF:', err);
+            }
+            // Clean up the temporary PDF file
+            fs.unlink(pdfPath, (unlinkErr) => {
+                if (unlinkErr) console.error('Error deleting temporary PDF:', unlinkErr);
+            });
+        });
+        
+    } catch (error) {
+        console.error('❌ Generate test drive bookings PDF error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// API endpoint to generate PDF for car valuations
+app.get('/api/car-valuations/pdf', authenticateToken, async (req, res) => {
+    try {
+        console.log(`📊 Generating PDF for car valuations...`);
+        
+        // Get car valuations
+        const result = await pool.query(
+            `SELECT 
+                id,
+                name,
+                phone,
+                brand,
+                model,
+                year,
+                fuel,
+                kms as mileage,
+                owner,
+                condition,
+                location,
+                submitted_at as created_at
+             FROM car_valuations 
+             ORDER BY submitted_at DESC`
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No car valuations found' });
+        }
+        
+        const pdfPath = await generateCarValuationsPDF(result.rows);
+        
+        res.download(pdfPath, 'car-valuations.pdf', (err) => {
+            if (err) {
+                console.error('Error sending PDF:', err);
+            }
+            // Clean up the temporary PDF file
+            fs.unlink(pdfPath, (unlinkErr) => {
+                if (unlinkErr) console.error('Error deleting temporary PDF:', unlinkErr);
+            });
+        });
+        
+    } catch (error) {
+        console.error('❌ Generate car valuations PDF error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 app.post('/api/save-confirmation', authenticateToken, async (req, res) => {
     try {
         const { carId, whatsappNumber, customerName, confirmationType, messageContent } = req.body;
@@ -1025,6 +1103,124 @@ async function generateConfirmationPDF(data) {
             doc.moveDown();
             doc.text('Message:');
             doc.fontSize(10).text(data.messageContent);
+            
+            doc.end();
+            
+            stream.on('finish', () => {
+                resolve(pdfPath);
+            });
+            
+            stream.on('error', reject);
+            
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+// PDF Generation function for test drive bookings
+async function generateTestDriveBookingsPDF(bookings) {
+    return new Promise((resolve, reject) => {
+        try {
+            const doc = new PDFDocument();
+            const pdfPath = `uploads/reports/test-drive-bookings-${Date.now()}.pdf`;
+            
+            // Ensure directory exists
+            const dir = path.dirname(pdfPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            
+            const stream = fs.createWriteStream(pdfPath);
+            doc.pipe(stream);
+            
+            // Add header
+            doc.fontSize(24).text('Test Drive Bookings Report', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(12).text(`Generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`, { align: 'center' });
+            doc.moveDown(2);
+            
+            // Add summary
+            doc.fontSize(16).text(`Total Bookings: ${bookings.length}`);
+            doc.moveDown();
+            
+            // Add each booking
+            bookings.forEach((booking, index) => {
+                doc.fontSize(14).text(`Booking ${index + 1}:`, { underline: true });
+                doc.fontSize(12).text(`Customer: ${booking.name || 'N/A'}`);
+                doc.text(`Phone: ${booking.phone || 'N/A'}`);
+                doc.text(`Car: ${booking.car || 'N/A'}`);
+                doc.text(`Date & Time: ${booking.datetime ? new Date(booking.datetime).toLocaleString() : 'N/A'}`);
+                doc.text(`Has License: ${booking.has_dl ? 'Yes' : 'No'}`);
+                doc.text(`Created: ${booking.created_at ? new Date(booking.created_at).toLocaleDateString() : 'N/A'}`);
+                
+                if (index < bookings.length - 1) {
+                    doc.moveDown();
+                    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+                    doc.moveDown();
+                }
+            });
+            
+            doc.end();
+            
+            stream.on('finish', () => {
+                resolve(pdfPath);
+            });
+            
+            stream.on('error', reject);
+            
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+// PDF Generation function for car valuations
+async function generateCarValuationsPDF(valuations) {
+    return new Promise((resolve, reject) => {
+        try {
+            const doc = new PDFDocument();
+            const pdfPath = `uploads/reports/car-valuations-${Date.now()}.pdf`;
+            
+            // Ensure directory exists
+            const dir = path.dirname(pdfPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            
+            const stream = fs.createWriteStream(pdfPath);
+            doc.pipe(stream);
+            
+            // Add header
+            doc.fontSize(24).text('Car Valuations Report', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(12).text(`Generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`, { align: 'center' });
+            doc.moveDown(2);
+            
+            // Add summary
+            doc.fontSize(16).text(`Total Valuations: ${valuations.length}`);
+            doc.moveDown();
+            
+            // Add each valuation
+            valuations.forEach((valuation, index) => {
+                doc.fontSize(14).text(`Valuation ${index + 1}:`, { underline: true });
+                doc.fontSize(12).text(`Customer: ${valuation.name || 'N/A'}`);
+                doc.text(`Phone: ${valuation.phone || 'N/A'}`);
+                doc.text(`Car: ${valuation.brand || 'N/A'} ${valuation.model || 'N/A'}`);
+                doc.text(`Year: ${valuation.year || 'N/A'}`);
+                doc.text(`Fuel: ${valuation.fuel || 'N/A'}`);
+                doc.text(`Mileage: ${valuation.mileage || 'N/A'} km`);
+                doc.text(`Owner: ${valuation.owner || 'N/A'}`);
+                doc.text(`Condition: ${valuation.condition || 'N/A'}`);
+                doc.text(`Location: ${valuation.location || 'N/A'}`);
+                doc.text(`Submitted: ${valuation.created_at ? new Date(valuation.created_at).toLocaleDateString() : 'N/A'}`);
+                
+                if (index < valuations.length - 1) {
+                    doc.moveDown();
+                    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+                    doc.moveDown();
+                }
+            });
             
             doc.end();
             

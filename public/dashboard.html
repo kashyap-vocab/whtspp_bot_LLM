@@ -287,9 +287,9 @@
                     }
                 });
                 
+                let cars = [];
                 if (carsResponse.ok) {
-                    const cars = await carsResponse.json();
-                    updateDashboardStats(cars);
+                    cars = await carsResponse.json();
                     displayRecentCars(cars.slice(0, 5));
                 }
                 
@@ -312,24 +312,47 @@
                     }
                 });
                 
+                let bookings = [];
                 if (bookingsResponse.ok) {
-                    const bookings = await bookingsResponse.json();
+                    bookings = await bookingsResponse.json();
                     displayRecentBookings(bookings.slice(0, 5));
                 }
+                
+                // Update dashboard stats with both cars and bookings data
+                console.log('📊 Dashboard data loaded:', { cars: cars.length, bookings: bookings.length });
+                updateDashboardStats(cars, bookings);
                 
             } catch (error) {
                 console.error('Error loading dashboard data:', error);
             }
         }
 
-        function updateDashboardStats(cars) {
-            document.getElementById('totalCars').textContent = cars.length;
+        function updateDashboardStats(cars, bookings) {
+            console.log('🔧 Updating dashboard stats:', { cars, bookings });
             
-            const availableCars = cars.filter(car => car.status === 'available').length;
-            document.getElementById('availableCars').textContent = availableCars;
+            // Handle cars data safely
+            if (cars && Array.isArray(cars)) {
+                document.getElementById('totalCars').textContent = cars.length;
+                
+                const availableCars = cars.filter(car => car.status === 'available').length;
+                document.getElementById('availableCars').textContent = availableCars;
+                
+                const carsWithImages = cars.filter(car => car.image_paths && car.image_paths.length > 0).length;
+                document.getElementById('carsWithImages').textContent = carsWithImages;
+            } else {
+                document.getElementById('totalCars').textContent = '0';
+                document.getElementById('availableCars').textContent = '0';
+                document.getElementById('carsWithImages').textContent = '0';
+            }
             
-            const carsWithImages = cars.filter(car => car.image_paths && car.image_paths.length > 0).length;
-            document.getElementById('carsWithImages').textContent = carsWithImages;
+            // Update test drive bookings count
+            if (bookings && Array.isArray(bookings)) {
+                document.getElementById('totalBookings').textContent = bookings.length;
+                console.log('✅ Test drive count updated to:', bookings.length);
+            } else {
+                document.getElementById('totalBookings').textContent = '0';
+                console.log('⚠️ No test drive bookings data, setting count to 0');
+            }
         }
 
         function displayRecentCars(cars) {

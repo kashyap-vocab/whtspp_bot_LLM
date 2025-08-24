@@ -192,6 +192,14 @@
                                     </button>
                                 </div>
                             </div>
+                            <div class="col-md-3">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid">
+                                    <button class="btn btn-success" onclick="downloadPDF()">
+                                        <i class="fas fa-file-pdf me-2"></i>Download PDF
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -471,6 +479,57 @@
             
             const modal = new bootstrap.Modal(document.getElementById('bookingDetailsModal'));
             modal.show();
+        }
+
+        // Download PDF function
+        async function downloadPDF() {
+            try {
+                const token = localStorage.getItem('authToken');
+                if (!token) {
+                    alert('Please log in to download PDF');
+                    return;
+                }
+                
+                // Show loading state
+                const downloadBtn = event.target;
+                const originalText = downloadBtn.innerHTML;
+                downloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating PDF...';
+                downloadBtn.disabled = true;
+                
+                // Make API call to generate PDF
+                const response = await fetch('/api/test-drive-bookings/pdf', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    // Create blob and download
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'test-drive-bookings.pdf';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    alert('PDF downloaded successfully!');
+                } else {
+                    const errorData = await response.json();
+                    alert(`Error generating PDF: ${errorData.error || 'Unknown error'}`);
+                }
+                
+            } catch (error) {
+                console.error('Error downloading PDF:', error);
+                alert('Error downloading PDF. Please try again.');
+            } finally {
+                // Reset button state
+                const downloadBtn = event.target;
+                downloadBtn.innerHTML = originalText;
+                downloadBtn.disabled = false;
+            }
         }
 
         function logout() {
