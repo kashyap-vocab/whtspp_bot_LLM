@@ -7,10 +7,39 @@ const path = require('path');
 const pool = require('../db');
 
 // Helper function to construct image URL using the new naming convention
-function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = null) {
-  const base = baseUrl || process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
-  const imagePath = `uploads/cars/${registrationNumber}/${registrationNumber}_${sequenceNumber}.jpg`;
-  return `${base}/${imagePath}`;
+// Only returns URL if image exists in database
+async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = null) {
+  try {
+    const pool = require('../db');
+    
+    // Check if this specific image exists in the database
+    const res = await pool.query(`
+      SELECT ci.image_path
+      FROM car_images ci
+      JOIN cars c ON ci.car_id = c.id
+      WHERE c.registration_number = $1 AND ci.image_type = $2
+      LIMIT 1
+    `, [registrationNumber, ['front', 'back', 'side', 'interior'][sequenceNumber - 1]]);
+    
+    if (res.rows.length === 0) {
+      console.log(`📸 No image found for ${registrationNumber} sequence ${sequenceNumber}`);
+      return null;
+    }
+    
+    const base = baseUrl || process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
+    const imagePath = res.rows[0].image_path;
+    
+    // Return Cloudinary URL if it's already a full URL, otherwise construct local URL
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    } else {
+      return `${base}/${imagePath}`;
+    }
+    
+  } catch (error) {
+    console.error('Error constructing image URL:', error);
+    return null;
+  }
 }
 
 // Helper function to check if an image URL is publicly accessible
