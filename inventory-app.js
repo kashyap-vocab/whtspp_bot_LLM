@@ -41,12 +41,6 @@ function getImageUrl(imagePath) {
         return imagePath;
     }
     
-    // If it's a local path and we're using Cloudinary, this shouldn't happen
-    if (cloudinary && imagePath.startsWith('uploads/')) {
-        console.warn('⚠️ Local image path found but Cloudinary is active:', imagePath);
-        return null;
-    }
-    
     // For local storage, construct the full URL
     if (imagePath.startsWith('uploads/')) {
         const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -196,13 +190,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Serve uploaded files (for local development)
-if (!cloudinary) {
-    app.use('/uploads', express.static('uploads'));
-    console.log('📁 Static file serving enabled for local uploads');
-} else {
-    console.log('☁️ Cloudinary storage active - local file serving disabled');
-}
+// Serve uploaded files (always enable for existing local images)
+app.use('/uploads', express.static('uploads'));
+console.log('📁 Static file serving enabled for uploads (handles existing local images)');
 
 // Session configuration
 app.use(session({
@@ -365,6 +355,11 @@ app.get('/car-valuations', authenticateToken, (req, res) => {
 // API test page for debugging
 app.get('/test-api', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'test-api.html'));
+});
+
+// Image test page for debugging
+app.get('/test-images', (req, res) => {
+    res.sendFile(path.join(__dirname, 'test-images.html'));
 });
 
 // Debug endpoint to check users in database
@@ -1008,6 +1003,36 @@ app.get('/api/test-drive-bookings', authenticateToken, async (req, res) => {
     }
 });
 
+// Image serving endpoint for existing local images
+app.get('/uploads/cars/:registration/:filename', (req, res) => {
+    const { registration, filename } = req.params;
+    const imagePath = path.join('uploads', 'cars', registration, filename);
+    
+    console.log(`🔍 Image request: ${registration}/${filename}`);
+    console.log(`📁 Full path: ${imagePath}`);
+    console.log(`📁 File exists: ${fs.existsSync(imagePath)}`);
+    
+    if (fs.existsSync(imagePath)) {
+        console.log(`✅ Serving local image: ${imagePath}`);
+        res.sendFile(path.resolve(imagePath));
+    } else {
+        // If local file doesn't exist, try to serve from Cloudinary if available
+        if (cloudinary) {
+            console.log(`❌ Local file missing, Cloudinary available`);
+            // This is a fallback for existing local paths that don't have files
+            res.status(404).json({ 
+                error: 'Image not found locally',
+                message: 'This image was stored locally but the file is missing. New uploads will use Cloudinary.',
+                path: imagePath,
+                suggestion: 'Consider re-uploading this image or migrating to Cloudinary'
+            });
+        } else {
+            console.log(`❌ Local file missing, no Cloudinary`);
+            res.status(404).json({ error: 'Image not found' });
+        }
+    }
+});
+
 // API endpoint for car valuations
 app.get('/api/car-valuations', authenticateToken, async (req, res) => {
     try {
@@ -1324,6 +1349,64 @@ async function generateCarValuationsPDF(valuations) {
     });
 }
 
+// Function to check existing images and provide migration guidance
+async function checkExistingImages() {
+    try {
+        console.log('🔍 Checking existing images in database...');
+        
+        // Get all cars with images
+        const carsResult = await pool.query(`
+            SELECT DISTINCT c.id, c.registration_number, c.brand, c.model
+            FROM cars c
+            JOIN car_images ci ON c.id = ci.car_id
+        `);
+        
+        if (carsResult.rows.length > 0) {
+            console.log(`📊 Found ${carsResult.rows.length} cars with images in database`);
+            
+            // Check if any images are stored locally
+            const localImagesResult = await pool.query(`
+                SELECT ci.image_path, c.registration_number
+                FROM car_images ci
+                JOIN cars c ON ci.car_id = c.id
+                WHERE ci.image_path LIKE 'uploads/%'
+            `);
+            
+            if (localImagesResult.rows.length > 0) {
+                console.log(`⚠️ Found ${localImagesResult.rows.length} local image paths that may need migration`);
+                console.log('💡 New uploads will use Cloudinary. Existing local images will continue to work if files exist.');
+                
+                // Check which local files actually exist
+                let existingFiles = 0;
+                let missingFiles = 0;
+                
+                for (const row of localImagesResult.rows) {
+                    const filePath = path.resolve(row.image_path);
+                    if (fs.existsSync(filePath)) {
+                        existingFiles++;
+                    } else {
+                        missingFiles++;
+                        console.log(`❌ Missing local file: ${row.image_path} for car ${row.registration_number}`);
+                    }
+                }
+                
+                console.log(`📁 Local files: ${existingFiles} exist, ${missingFiles} missing`);
+                
+                if (missingFiles > 0 && cloudinary) {
+                    console.log('💡 Consider migrating missing images to Cloudinary or re-uploading them');
+                }
+            } else {
+                console.log('✅ All images are already using Cloudinary or external URLs');
+            }
+        } else {
+            console.log('📊 No cars with images found in database');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error checking existing images:', error);
+    }
+}
+
 // Function to clean up old image paths and update to new naming convention
 async function cleanupOldImagePaths() {
     try {
@@ -1575,6 +1658,9 @@ async function startServer() {
     try {
         // Initialize database first
         await initializeDatabase();
+        
+        // Check for existing local images that need migration
+        await checkExistingImages();
         
         // Clean up old image paths
         await cleanupOldImagePaths();
