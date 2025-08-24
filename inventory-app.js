@@ -9,6 +9,53 @@ const xlsx = require('xlsx');
 const PDFDocument = require('pdfkit');
 const pool = require('./db');
 
+// Cloudinary configuration
+let cloudinary = null;
+let cloudinaryStorage = null;
+
+if (process.env.CLOUDINARY_CLOUD_NAME) {
+    try {
+        cloudinary = require('cloudinary').v2;
+        cloudinaryStorage = require('multer-storage-cloudinary');
+        
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET
+        });
+        
+        console.log('☁️ Cloudinary configured successfully');
+    } catch (error) {
+        console.log('⚠️ Cloudinary packages not installed, falling back to local storage');
+    }
+} else {
+    console.log('📁 Using local file storage (set CLOUDINARY_CLOUD_NAME to use Cloudinary)');
+}
+
+// Helper function to get image URL (works with both Cloudinary and local storage)
+function getImageUrl(imagePath) {
+    if (!imagePath) return null;
+    
+    // If it's already a Cloudinary URL, return as is
+    if (imagePath.startsWith('http')) {
+        return imagePath;
+    }
+    
+    // If it's a local path and we're using Cloudinary, this shouldn't happen
+    if (cloudinary && imagePath.startsWith('uploads/')) {
+        console.warn('⚠️ Local image path found but Cloudinary is active:', imagePath);
+        return null;
+    }
+    
+    // For local storage, construct the full URL
+    if (imagePath.startsWith('uploads/')) {
+        const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
+        return `${baseUrl}/${imagePath}`;
+    }
+    
+    return imagePath;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -148,7 +195,14 @@ async function initializeDatabase() {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
-app.use('/uploads', express.static('uploads'));
+
+// Serve uploaded files (for local development)
+if (!cloudinary) {
+    app.use('/uploads', express.static('uploads'));
+    console.log('📁 Static file serving enabled for local uploads');
+} else {
+    console.log('☁️ Cloudinary storage active - local file serving disabled');
+}
 
 // Session configuration
 app.use(session({
@@ -184,8 +238,26 @@ const upload = multer({
     }
 });
 
-const imageUpload = multer({
-    storage: multer.diskStorage({
+// Configure image upload storage based on environment
+let imageUploadStorage;
+
+if (cloudinary && cloudinaryStorage) {
+    // Use Cloudinary storage
+    imageUploadStorage = cloudinaryStorage.CloudinaryStorage({
+        cloudinary: cloudinary,
+        params: {
+            folder: 'autosherpa/cars',
+            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+            transformation: [
+                { width: 800, height: 600, crop: 'limit' },
+                { quality: 'auto:good' }
+            ]
+        }
+    });
+    console.log('☁️ Using Cloudinary storage for images');
+} else {
+    // Use local storage as fallback
+    imageUploadStorage = multer.diskStorage({
         destination: function (req, file, cb) {
             // Get registration number from the request body
             const registrationNumber = req.body.registrationNumber;
@@ -214,7 +286,12 @@ const imageUpload = multer({
             console.log(`📸 Multer saving image as: ${filename}`);
             cb(null, filename);
         }
-    }),
+    });
+    console.log('📁 Using local storage for images');
+}
+
+const imageUpload = multer({
+    storage: imageUploadStorage,
     fileFilter: function (req, file, cb) {
         if (file.mimetype.startsWith('image/')) {
             cb(null, true);
@@ -784,44 +861,55 @@ app.post('/api/upload-car-images', authenticateToken, imageUpload.array('images'
             const imageType = parsedTypes[i] || 'unknown';
             const imageIndex = parsedIndices[i] || i; // Use provided index or fallback to loop index
             
-            // Create the new standardized filename: registrationNumber_1.jpg, registrationNumber_2.jpg, etc.
-            const newFilename = `${registrationNumber}_${parseInt(imageIndex) + 1}.jpg`;
+            let imagePath;
+            let filename;
             
-            // Determine the correct car directory
-            const carDir = path.join('uploads', 'cars', registrationNumber);
-            if (!fs.existsSync(carDir)) {
-                fs.mkdirSync(carDir, { recursive: true });
+            if (cloudinary && file.url) {
+                // Cloudinary upload - file.url contains the Cloudinary URL
+                imagePath = file.url;
+                filename = `${registrationNumber}_${parseInt(imageIndex) + 1}`;
+                console.log(`☁️ Cloudinary image uploaded: ${imagePath}`);
+            } else {
+                // Local upload - handle file moving and path creation
+                filename = `${registrationNumber}_${parseInt(imageIndex) + 1}.jpg`;
+                
+                // Determine the correct car directory
+                const carDir = path.join('uploads', 'cars', registrationNumber);
+                if (!fs.existsSync(carDir)) {
+                    fs.mkdirSync(carDir, { recursive: true });
+                }
+                
+                // Move file from temp location to correct car directory
+                const oldPath = file.path;
+                const newPath = path.join(carDir, filename);
+                
+                try {
+                    // Move the file to the correct location
+                    fs.renameSync(oldPath, newPath);
+                    console.log(`📸 Moved file: ${path.basename(oldPath)} -> ${filename}`);
+                } catch (moveError) {
+                    console.error(`❌ Error moving file: ${moveError.message}`);
+                    // Continue with the old path if move fails
+                }
+                
+                // Create the new standardized path for easier WhatsApp bot fetching
+                imagePath = `uploads/cars/${registrationNumber}/${filename}`;
+                console.log(`📸 Local image saved: ${imagePath}`);
             }
             
-            // Move file from temp location to correct car directory
-            const oldPath = file.path;
-            const newPath = path.join(carDir, newFilename);
+            console.log(`📸 Processing image ${i + 1}: ${filename} -> ${imagePath} (type: ${imageType}, index: ${imageIndex})`);
             
-            try {
-                // Move the file to the correct location
-                fs.renameSync(oldPath, newPath);
-                console.log(`📸 Moved file: ${path.basename(oldPath)} -> ${newFilename}`);
-            } catch (moveError) {
-                console.error(`❌ Error moving file: ${moveError.message}`);
-                // Continue with the old path if move fails
-            }
-            
-            // Create the new standardized path for easier WhatsApp bot fetching
-            const newImagePath = `uploads/cars/${registrationNumber}/${newFilename}`;
-            
-            console.log(`📸 Processing image ${i + 1}: ${newFilename} -> ${newImagePath} (type: ${imageType}, index: ${imageIndex})`);
-            
-            // Save image record to database with the new path
+            // Save image record to database with the path (Cloudinary URL or local path)
             const imageResult = await pool.query(
                 'INSERT INTO car_images (car_id, image_path, image_type) VALUES ($1, $2, $3) RETURNING id',
-                [carId, newImagePath, imageType]
+                [carId, imagePath, imageType]
             );
             
             uploadedImages.push({
                 id: imageResult.rows[0].id,
-                path: newImagePath,
+                path: imagePath,
                 type: imageType,
-                filename: newFilename,
+                filename: filename,
                 sequence: parseInt(imageIndex) + 1
             });
         }
@@ -863,7 +951,7 @@ app.get('/api/cars', authenticateToken, async (req, res) => {
             );
             
             // Ensure image_paths is always an array, even if empty
-            const imagePaths = imagesResult.rows.map(row => row.image_path);
+            const imagePaths = imagesResult.rows.map(row => getImageUrl(row.image_path)).filter(Boolean);
             const imageTypes = imagesResult.rows.map(row => row.image_type);
             
             carsWithImages.push({
