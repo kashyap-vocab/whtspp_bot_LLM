@@ -106,6 +106,71 @@
         .car-search .row {
             align-items: end;
         }
+        
+        /* Live Image Capture Styles */
+        .camera-container {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .camera-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .capture-preview {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            border: 2px dashed #dee2e6;
+        }
+        
+        .capture-preview.has-image {
+            border-color: #28a745;
+            background-color: #f8fff9;
+        }
+        
+        .btn-group .btn {
+            border-radius: 6px;
+            margin: 0 2px;
+        }
+        
+        .btn-group .btn:first-child {
+            border-top-left-radius: 6px;
+            border-bottom-left-radius: 6px;
+        }
+        
+        .btn-group .btn:last-child {
+            border-top-right-radius: 6px;
+            border-bottom-right-radius: 6px;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .camera-container video,
+            .camera-container canvas {
+                width: 100% !important;
+                height: 200px !important;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .btn-group .btn {
+                margin: 2px 0;
+                border-radius: 6px !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -306,9 +371,81 @@
                                         <i class="fas fa-car fa-2x text-primary mb-2"></i>
                                         <h6>Interior</h6>
                                         <small class="text-muted">Click to upload</small>
-                                        <div id="sideImagePreview"></div>
+                                        <div id="interiorImagePreview"></div>
                                         <input type="file" id="interiorImage" accept="image/*" style="display: none;" 
                                                onchange="previewImage('interior', this)">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Live Image Capture Section -->
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="fas fa-camera me-2"></i>Live Image Capture
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <div class="text-center">
+                                                        <div class="camera-container">
+                                                            <video id="camera" width="100%" height="300" autoplay style="border-radius: 8px; background: #000;"></video>
+                                                            <div class="camera-overlay" id="cameraStatus" style="display: none;">
+                                                                <i class="fas fa-camera me-1"></i>Camera Active
+                                                            </div>
+                                                        </div>
+                                                        <div class="mt-3">
+                                                            <div class="mb-2">
+                                                                <label for="captureImageType" class="form-label">Select Image Type:</label>
+                                                                <select class="form-select form-select-sm" id="captureImageType" style="max-width: 200px; margin: 0 auto;">
+                                                                    <option value="">Choose type...</option>
+                                                                    <option value="front">Front View</option>
+                                                                    <option value="back">Back View</option>
+                                                                    <option value="side">Side View</option>
+                                                                    <option value="interior">Interior</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="btn-group" role="group">
+                                                                <button class="btn btn-success btn-sm" onclick="startCamera()" id="startCameraBtn">
+                                                                    <i class="fas fa-play me-1"></i>Start Camera
+                                                                </button>
+                                                                <button class="btn btn-danger btn-sm" onclick="stopCamera()" id="stopCameraBtn" disabled>
+                                                                    <i class="fas fa-stop me-1"></i>Stop Camera
+                                                                </button>
+                                                                <button class="btn btn-primary btn-sm" onclick="captureImage()" id="captureBtn" disabled>
+                                                                    <i class="fas fa-camera me-1"></i>Capture
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <div class="text-center">
+                                                        <div class="capture-preview" id="capturePreview">
+                                                            <canvas id="canvas" width="400" height="300" style="border: 1px solid #ddd; border-radius: 8px; display: none;"></canvas>
+                                                            <div id="capturedImagePreview" class="mt-2"></div>
+                                                            <div class="mt-2" id="captureButtons" style="display: none;">
+                                                                <button class="btn btn-success btn-sm me-2" onclick="useCapturedImage()">
+                                                                    <i class="fas fa-check me-1"></i>Use This Image
+                                                                </button>
+                                                                <button class="btn btn-secondary btn-sm" onclick="discardCapturedImage()">
+                                                                    <i class="fas fa-times me-1"></i>Discard
+                                                                </button>
+                                                            </div>
+                                                            <div class="mt-3" id="captureInstructions">
+                                                                <small class="text-muted">
+                                                                    <i class="fas fa-info-circle me-1"></i>
+                                                                    Select an image type above, then start camera and capture
+                                                                </small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -359,6 +496,11 @@
             interior: null
         };
         let allCars = []; // Store all cars for filtering
+        
+        // Camera variables
+        let stream = null;
+        let capturedImage = null;
+        let selectedImageType = null;
 
         // Check authentication
         async function checkAuth() {
@@ -404,6 +546,7 @@
             currentCarId = null;
             currentRegistrationNumber = '';
             resetUploads();
+            resetCameraInterface();
         }
 
         // Show upload section
@@ -414,6 +557,7 @@
 
         // Select image
         function selectImage(type) {
+            selectedImageType = type; // Set the selected type for live capture
             document.getElementById(`${type}Image`).click();
         }
 
@@ -472,9 +616,24 @@
                 
                 // Add images to form data with proper indexing
                 imageTypes.forEach((type, index) => {
-                    const file = uploadedImages[type];
-                    if (file) {
-                        formData.append('images', file);
+                    const imageData = uploadedImages[type];
+                    if (imageData) {
+                        if (imageData instanceof File) {
+                            // Handle file uploads
+                            formData.append('images', imageData);
+                        } else if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
+                            // Handle captured images (convert base64 to blob)
+                            const base64Data = imageData.split(',')[1];
+                            const byteCharacters = atob(base64Data);
+                            const byteNumbers = new Array(byteCharacters.length);
+                            for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                            }
+                            const byteArray = new Uint8Array(byteNumbers);
+                            const blob = new Blob([byteArray], { type: 'image/jpeg' });
+                            const file = new File([blob], `${type}_captured.jpg`, { type: 'image/jpeg' });
+                            formData.append('images', file);
+                        }
                         imageIndices.push(index); // Build the indices array
                     }
                 });
@@ -504,6 +663,8 @@
                     resetUploads();
                     hideCarInfo();
                     document.getElementById('registrationNumber').value = '';
+                    // Stop camera if it's running
+                    stopCamera();
                 } else {
                     alert('Upload failed: ' + (result.error || 'Unknown error'));
                 }
@@ -518,7 +679,7 @@
             }
         }
 
-                // Reset uploads
+        // Reset uploads
         function resetUploads() {
             uploadedImages = {
                 front: null,
@@ -534,7 +695,24 @@
                 document.getElementById(`${type}Image`).value = '';
             });
             
+            // Reset camera interface
+            stopCamera();
+            document.getElementById('captureImageType').value = '';
+            document.getElementById('capturedImagePreview').innerHTML = '';
+            document.getElementById('captureButtons').style.display = 'none';
+            document.getElementById('captureInstructions').style.display = 'block';
+            
             document.getElementById('uploadBtn').disabled = true;
+        }
+
+        // Reset camera interface specifically
+        function resetCameraInterface() {
+            stopCamera();
+            document.getElementById('captureImageType').value = '';
+            document.getElementById('capturedImagePreview').innerHTML = '';
+            document.getElementById('captureButtons').style.display = 'none';
+            document.getElementById('captureInstructions').style.display = 'block';
+            document.getElementById('canvas').style.display = 'none';
         }
 
         // Load cars for dropdowns
@@ -850,15 +1028,264 @@
             }
         }
 
+        // Camera functions
+        async function startCamera() {
+            const selectedType = document.getElementById('captureImageType').value;
+            if (!selectedType) {
+                showNotification('⚠️ Please select an image type first', 'warning');
+                return;
+            }
+            
+            try {
+                const video = document.getElementById('camera');
+                
+                // Check if camera permissions are available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Camera API not supported in this browser');
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'environment' // Use back camera if available
+                    } 
+                });
+                
+                video.srcObject = stream;
+                await video.play();
+                
+                document.getElementById('canvas').style.display = 'block';
+                document.getElementById('captureButtons').style.display = 'none'; // Hide until capture
+                document.getElementById('capturedImagePreview').innerHTML = ''; // Clear previous preview
+                document.getElementById('captureBtn').disabled = false; // Enable capture button
+                document.getElementById('stopCameraBtn').disabled = false; // Enable stop button
+                document.getElementById('startCameraBtn').disabled = true; // Disable start button
+                document.getElementById('cameraStatus').style.display = 'block'; // Show camera status
+                
+                showNotification('📸 Camera started successfully!', 'success');
+                console.log('📸 Camera started successfully');
+                
+            } catch (error) {
+                console.error('Error starting camera:', error);
+                
+                let errorMessage = 'Could not start camera. ';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage += 'Please allow camera access when prompted.';
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage += 'No camera found on this device.';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage += 'Camera not supported in this browser.';
+                } else {
+                    errorMessage += 'Please ensure you have a webcam and permissions.';
+                }
+                
+                showNotification(errorMessage, 'danger');
+                document.getElementById('cameraStatus').style.display = 'none'; // Hide camera status on error
+            }
+        }
+
+        // Camera functions
+        async function startCamera() {
+            const selectedType = document.getElementById('captureImageType').value;
+            if (!selectedType) {
+                showNotification('⚠️ Please select an image type first', 'warning');
+                return;
+            }
+            
+            try {
+                const video = document.getElementById('camera');
+                
+                // Check if camera permissions are available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Camera API not supported in this browser');
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'environment' // Use back camera if available
+                    } 
+                });
+                
+                video.srcObject = stream;
+                await video.play();
+                
+                document.getElementById('canvas').style.display = 'block';
+                document.getElementById('captureButtons').style.display = 'none'; // Hide until capture
+                document.getElementById('capturedImagePreview').innerHTML = ''; // Clear previous preview
+                document.getElementById('captureBtn').disabled = false; // Enable capture button
+                document.getElementById('stopCameraBtn').disabled = false; // Enable stop button
+                document.getElementById('startCameraBtn').disabled = true; // Disable start button
+                document.getElementById('cameraStatus').style.display = 'block'; // Show camera status
+                
+                showNotification('📸 Camera started successfully!', 'success');
+                console.log('📸 Camera started successfully');
+                
+            } catch (error) {
+                console.error('Error starting camera:', error);
+                
+                let errorMessage = 'Could not start camera. ';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage += 'Please allow camera access when prompted.';
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage += 'No camera found on this device.';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage += 'Camera not supported in this browser.';
+                } else {
+                    errorMessage += 'Please ensure you have a webcam and permissions.';
+                }
+                
+                showNotification(errorMessage, 'danger');
+                document.getElementById('cameraStatus').style.display = 'none'; // Hide camera status on error
+            }
+        }
+
+        function stopCamera() {
+            const video = document.getElementById('camera');
+            if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+                document.getElementById('canvas').style.display = 'none';
+                document.getElementById('captureButtons').style.display = 'none';
+                document.getElementById('capturedImagePreview').innerHTML = ''; // Clear preview
+                document.getElementById('captureBtn').disabled = true; // Disable capture button
+                document.getElementById('stopCameraBtn').disabled = true; // Disable stop button
+                document.getElementById('startCameraBtn').disabled = false; // Enable start button
+                document.getElementById('cameraStatus').style.display = 'none'; // Hide camera status
+                console.log('📸 Camera stopped');
+            }
+        }
+
+        function captureImage() {
+            const selectedType = document.getElementById('captureImageType').value;
+            if (!selectedType) {
+                showNotification('⚠️ Please select an image type first', 'warning');
+                return;
+            }
+            
+            const video = document.getElementById('camera');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            
+            // Set canvas dimensions to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw the current video frame to canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to JPEG with good quality
+            capturedImage = canvas.toDataURL('image/jpeg', 0.9);
+            
+            // Show preview
+            document.getElementById('capturedImagePreview').innerHTML = `
+                <div class="alert alert-success">
+                    <h6><i class="fas fa-check-circle me-2"></i>Image Captured!</h6>
+                    <img src="${capturedImage}" alt="Captured Image" style="max-width: 100%; max-height: 150px; border-radius: 8px; margin: 10px 0;">
+                    <div><strong>Type:</strong> ${selectedType.toUpperCase()} VIEW</div>
+                </div>
+            `;
+            document.getElementById('captureButtons').style.display = 'block';
+            
+            console.log(`📸 Image captured for ${selectedType} view`);
+        }
+
+        function useCapturedImage() {
+            const selectedType = document.getElementById('captureImageType').value;
+            if (selectedType && capturedImage) {
+                // Check if this image type already has an image
+                if (uploadedImages[selectedType]) {
+                    if (!confirm(`This will replace the existing ${selectedType} image. Continue?`)) {
+                        return;
+                    }
+                }
+                
+                uploadedImages[selectedType] = capturedImage;
+                const previewDiv = document.getElementById(`${selectedType}ImagePreview`);
+                previewDiv.innerHTML = `
+                    <img src="${capturedImage}" class="image-preview" alt="${selectedType.toUpperCase()} VIEW">
+                    <div class="image-type-label">${selectedType.toUpperCase()} VIEW (Live Capture)</div>
+                `;
+                document.getElementById(`${selectedType}ImageArea`).classList.add('has-image');
+                
+                // Reset camera interface
+                document.getElementById('captureImagePreview').innerHTML = '';
+                document.getElementById('captureButtons').style.display = 'none';
+                document.getElementById('captureImageType').value = '';
+                
+                // Check if ready to upload
+                checkUploadReady();
+                
+                // Show success message
+                showNotification(`✅ ${selectedType.toUpperCase()} image captured and assigned successfully!`, 'success');
+                
+                console.log(`✅ Captured image assigned to ${selectedType} view`);
+            }
+        }
+
+        function discardCapturedImage() {
+            document.getElementById('capturedImagePreview').innerHTML = '';
+            document.getElementById('captureButtons').style.display = 'none';
+            capturedImage = null;
+            console.log('🗑️ Captured image discarded');
+        }
+
+        // Show notification function
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // Add to page
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
         function logout() {
             localStorage.removeItem('authToken');
             localStorage.removeItem('userData');
             window.location.href = '/';
         }
 
+        // Check if browser supports camera API
+        function checkCameraSupport() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                document.getElementById('captureImageType').disabled = true;
+                document.getElementById('startCameraBtn').disabled = true;
+                document.getElementById('captureInstructions').innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Camera not supported:</strong> Your browser doesn't support camera access.
+                        <br><small>Please use a modern browser like Chrome, Firefox, or Safari.</small>
+                    </div>
+                `;
+                return false;
+            }
+            return true;
+        }
+
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
             checkAuth();
+            
+            // Check camera support
+            checkCameraSupport();
+            
             // Load cars after authentication check
             setTimeout(() => {
                 if (localStorage.getItem('authToken')) {

@@ -687,7 +687,8 @@
                         <div class="row g-2">
                             ${car.image_paths.map((path, index) => {
                                 // Construct proper URL from stored path
-                                const baseUrl = window.location.origin; // Gets http://localhost:3000
+                                const baseUrl = window.location.origin; 
+                                
                                 const imageUrl = path.startsWith('http') ? path : `${baseUrl}/${path}`;
                                 
                                 console.log(`📸 Modal image ${index + 1}: ${path} -> ${imageUrl}`);
@@ -850,7 +851,9 @@
             formData.append('registrationNumber', car.registration_number);
             
             files.forEach(({ file, sequence }) => {
-                formData.append('images', file);
+                const ext = file.name.split('.').pop();
+                const safeFilename = `${car.registration_number}_${sequence}.${ext}`;
+                formData.append('images', file, safeFilename);
                 formData.append('sequences', sequence);
             });
             

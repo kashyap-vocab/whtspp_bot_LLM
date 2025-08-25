@@ -6,11 +6,14 @@
   "scripts": {
     "test": "node test-startup.js",
     "start": "node inventory-app.js",
+    "start:env": "node inventory-app.js",
     "dev": "nodemon inventory-app.js",
+    "dev:env": "nodemon inventory-app.js",
     "whatsapp": "node app.js",
     "whatsapp:dev": "nodemon app.js",
     "both": "concurrently \"npm run start\" \"npm run whatsapp\"",
-    "both:dev": "concurrently \"npm run dev\" \"npm run whatsapp:dev\""
+    "both:dev": "concurrently \"npm run dev\" \"npm run whatsapp:dev\"",
+    "setup:env": "cp env.example .env && echo '✅ Environment file created. Please edit .env with your values.'"
   },
   "keywords": [],
   "author": "",

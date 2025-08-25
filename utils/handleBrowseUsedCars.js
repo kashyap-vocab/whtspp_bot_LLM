@@ -1,4 +1,4 @@
-const { formatRupees, getAvailableTypes, getAvailableBrands, getCarsByFilter } = require('./carData');
+const { formatRupees, getAvailableTypes, getAvailableBrands, getCarsByFilter , getCarImagesByRegistration} = require('./carData');
 const { getNextAvailableDays, getTimeSlots, getActualDateFromSelection, getActualDateFromDaySelection } = require('./timeUtils');
 const fs = require('fs');
 const path = require('path');
@@ -7,10 +7,39 @@ const path = require('path');
 const pool = require('../db');
 
 // Helper function to construct image URL using the new naming convention
-function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = null) {
-  const base = baseUrl || process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000';
-  const imagePath = `uploads/cars/${registrationNumber}/${registrationNumber}_${sequenceNumber}.jpg`;
-  return `${base}/${imagePath}`;
+// Only returns URL if image exists in database
+async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = null) {
+  try {
+    const pool = require('../db');
+    
+    // Check if this specific image exists in the database
+    const res = await pool.query(`
+      SELECT ci.image_path
+      FROM car_images ci
+      JOIN cars c ON ci.car_id = c.id
+      WHERE c.registration_number = $1 AND ci.image_type = $2
+      LIMIT 1
+    `, [registrationNumber, ['front', 'back', 'side', 'interior'][sequenceNumber - 1]]);
+    
+    if (res.rows.length === 0) {
+      console.log(`📸 No image found for ${registrationNumber} sequence ${sequenceNumber}`);
+      return null;
+    }
+    
+    const base = 'http://27.111.72.51:3000';
+    const imagePath = res.rows[0].image_path;
+    
+    // Return Cloudinary URL if it's already a full URL, otherwise construct local URL
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    } else {
+      return `${base}/${imagePath}`;
+    }
+    
+  } catch (error) {
+    console.error('Error constructing image URL:', error);
+    return null;
+  }
 }
 
 // Helper function to check if an image URL is publicly accessible
@@ -430,6 +459,7 @@ async function getCarDisplayChunk(session, pool) {
     
     // Use images by registration if available
     const finalCarImages = imagesByRegistration;
+
     
     const caption =
       `🚗 ${car.brand} ${car.model} ${car.variant}\n` +
@@ -444,7 +474,7 @@ async function getCarDisplayChunk(session, pool) {
       if (validImages.length === 0) {
         console.log(`⚠️ No valid images found for car ${car.id}, falling back to text-only`);
         // Fall back to text-only message
-        const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment';
+        const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment 1';
         messages.push({
           type: 'text',
           text: { body: enhancedCaption }
@@ -454,19 +484,32 @@ async function getCarDisplayChunk(session, pool) {
         const firstImage = validImages[0];
         
         // Use the new naming convention helper function
-        let imageUrl;
+        let imageUrl = null;
         if (firstImage.sequence && car.registration_number) {
           // Use the new naming convention: registrationNumber_1.jpg
-          imageUrl = constructImageUrl(car.registration_number, firstImage.sequence);
+          imageUrl = await constructImageUrl(car.registration_number, firstImage.sequence);
           console.log(`📸 Using new naming convention for image: ${imageUrl}`);
         } else {
           // Fall back to the old path-based method
           if (firstImage.path.startsWith('uploads/')) {
-            imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/${firstImage.path}`;
+            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000'}/${firstImage.path}`;
+            imageUrl = 'http://27.111.72.51:3000'
           } else {
-            imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/uploads/${firstImage.path}`;
+            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000'}/uploads/${firstImage.path}`;
+            imageUrl = 'http://27.111.72.51:3000'
           }
           console.log(`📸 Using fallback path method for image: ${imageUrl}`);
+        }
+        
+        // Guard: if URL couldn't be constructed, fall back to text
+        if (!imageUrl || typeof imageUrl !== 'string') {
+          console.log('⚠️ Image URL missing, falling back to text message');
+          const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment 2';
+          messages.push({
+            type: 'text',
+            text: { body: enhancedCaption }
+          });
+          continue;
         }
         
         // Check if the image URL is publicly accessible
@@ -494,7 +537,7 @@ async function getCarDisplayChunk(session, pool) {
       console.log(`📸 No images found for car ${car.id}, showing text-only message`);
       
       // Enhanced caption for cars without images
-      const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment';
+      const enhancedCaption = caption + '\n\n📸 Images: Not available at the moment 3';
       
       // Add text message instead of image
       messages.push({
@@ -504,7 +547,7 @@ async function getCarDisplayChunk(session, pool) {
       
       // Try to find image in static images directory as fallback (only if no uploaded images)
       const staticImageFile = `${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_') + '.png';
-      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/images/${staticImageFile}`;
+      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000'}/images/${staticImageFile}`;
       
       console.log(`📸 Trying static image fallback: ${staticImageFile}`);
       

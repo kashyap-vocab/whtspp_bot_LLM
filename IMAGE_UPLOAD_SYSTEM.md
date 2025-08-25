@@ -137,7 +137,7 @@ fetch('/api/upload-car-images', {
 ### WhatsApp Bot Access
 ```javascript
 // In handleBrowseUsedCars.js
-const imageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/${imagePath}`;
+// const imageUrl = `${process.env.NGROK_URL || 'http://localhost:3000'}/${imagePath}`;
 // imagePath example: uploads/cars/KA13AB0997/KA13AB0997_1.jpg
 ```
 
