@@ -396,44 +396,21 @@ async function getCarImagesByRegistration(pool, registrationNumber) {
 }
 
 // Simple function to get image URLs by registration number (for WhatsApp bot)
-// Only returns URLs for images that actually exist in the database
-async function getImageUrlsByRegistration(registrationNumber, baseUrl = null) {
-  try {
-    const pool = require('../db');
-    
-    // First check if images exist in the database
-    const res = await pool.query(`
-      SELECT ci.image_path, ci.image_type, ci.id
-      FROM car_images ci
-      JOIN cars c ON ci.car_id = c.id
-      WHERE c.registration_number = $1
-      ORDER BY ci.id
-    `, [registrationNumber]);
-    
-    if (res.rows.length === 0) {
-      console.log(`📸 No images found in database for car ${registrationNumber}`);
-      return [];
-    }
-    
-    const base = baseUrl || process.env.BASE_URL || 'http://localhost:3000';
-    const imageUrls = [];
-    
-    // Only return URLs for images that exist in the database
-    res.rows.forEach((row, index) => {
-      imageUrls.push({
-        url: row.image_path.startsWith('http') ? row.image_path : `${base}/${row.image_path}`,
-        sequence: index + 1,
-        type: row.image_type || 'additional'
-      });
+function getImageUrlsByRegistration(registrationNumber, baseUrl = null) {
+  const base = baseUrl || 'http://localhost:3000';
+  const imageUrls = [];
+  
+  // Check for images 1-4 using the new naming convention
+  for (let i = 1; i <= 4; i++) {
+    const imagePath = `uploads/cars/${registrationNumber}/${registrationNumber}_${i}.jpg`;
+    imageUrls.push({
+      url: `${base}/${imagePath}`,
+      sequence: i,
+      type: ['front', 'back', 'side', 'interior'][i - 1] || 'additional'
     });
-    
-    console.log(`📸 Found ${imageUrls.length} images in database for ${registrationNumber}`);
-    return imageUrls;
-    
-  } catch (error) {
-    console.error('Error fetching image URLs by registration:', error);
-    return [];
   }
+  
+  return imageUrls;
 }
 
 module.exports = {

@@ -9,13 +9,28 @@ const xlsx = require('xlsx');
 const PDFDocument = require('pdfkit');
 const pool = require('./db');
 
-// Cloudinary configuration (disabled for now - using local storage)
+// Cloudinary configuration
 let cloudinary = null;
 let cloudinaryStorage = null;
 
-// Force local storage for development
-console.log('📁 Using local file storage (Cloudinary disabled for development)');
-console.log('💡 To enable Cloudinary, set CLOUDINARY_CLOUD_NAME environment variable');
+if (process.env.CLOUDINARY_CLOUD_NAME) {
+    try {
+        cloudinary = require('cloudinary').v2;
+        cloudinaryStorage = require('multer-storage-cloudinary');
+        
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET
+        });
+        
+        console.log('☁️ Cloudinary configured successfully');
+    } catch (error) {
+        console.log('⚠️ Cloudinary packages not installed, falling back to local storage');
+    }
+} else {
+    console.log('📁 Using local file storage (set CLOUDINARY_CLOUD_NAME to use Cloudinary)');
+}
 
 // Helper function to get image URL (local storage)
 function getImageUrl(imagePath) {
@@ -208,39 +223,57 @@ const upload = multer({
     }
 });
 
-// Configure image upload storage - using local storage
-const imageUploadStorage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        // Get registration number from the request body
-        const registrationNumber = req.body.registrationNumber;
-        
-        if (!registrationNumber || registrationNumber === 'unknown') {
-            // Save to a temporary directory if no registration number
-            const tempDir = 'uploads/cars/temp';
-            if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
-            }
-            cb(null, tempDir);
-        } else {
-            // Save to the proper car directory
-            const carDir = `uploads/cars/${registrationNumber}/`;
-            if (!fs.existsSync(carDir)) {
-                fs.mkdirSync(carDir, { recursive: true });
-            }
-            cb(null, carDir);
-        }
-    },
-    filename: function (req, file, cb) {
-        // For now, use timestamp to avoid conflicts, we'll rename them properly in the API
-        const timestamp = Date.now();
-        const filename = `temp_${timestamp}_${file.originalname}`;
-        
-        console.log(`📸 Multer saving image as: ${filename}`);
-        cb(null, filename);
-    }
-});
+// Configure image upload storage based on environment
+let imageUploadStorage;
 
-console.log('📁 Using local storage for images (development mode)');
+if (cloudinary && cloudinaryStorage) {
+    // Use Cloudinary storage
+    imageUploadStorage = cloudinaryStorage.CloudinaryStorage({
+        cloudinary: cloudinary,
+        params: {
+            folder: 'autosherpa/cars',
+            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+            transformation: [
+                { width: 800, height: 600, crop: 'limit' },
+                { quality: 'auto:good' }
+            ]
+        }
+    });
+    console.log('☁️ Using Cloudinary storage for images');
+} else {
+    // Use local storage as fallback
+    imageUploadStorage = multer.diskStorage({
+        destination: function (req, file, cb) {
+            // Get registration number from the request body
+            const registrationNumber = req.body.registrationNumber;
+            
+            if (!registrationNumber || registrationNumber === 'unknown') {
+                // Save to a temporary directory if no registration number
+                const tempDir = 'uploads/cars/temp';
+                if (!fs.existsSync(tempDir)) {
+                    fs.mkdirSync(tempDir, { recursive: true });
+                }
+                cb(null, tempDir);
+            } else {
+                // Save to the proper car directory
+                const carDir = `uploads/cars/${registrationNumber}/`;
+                if (!fs.existsSync(carDir)) {
+                    fs.mkdirSync(carDir, { recursive: true });
+                }
+                cb(null, carDir);
+            }
+        },
+        filename: function (req, file, cb) {
+            // For now, use timestamp to avoid conflicts, we'll rename them properly in the API
+            const timestamp = Date.now();
+            const filename = `temp_${timestamp}_${file.originalname}`;
+            
+            console.log(`📸 Multer saving image as: ${filename}`);
+            cb(null, filename);
+        }
+    });
+    console.log('📁 Using local storage for images');
+}
 
 const imageUpload = multer({
     storage: imageUploadStorage,
@@ -817,36 +850,47 @@ app.post('/api/upload-car-images', authenticateToken, imageUpload.array('images'
         console.log(`📸 Received imageIndices:`, parsedIndices);
         console.log(`📸 Received files:`, req.files.map(f => f.filename));
         
-        // Process uploaded images (local storage)
+        // Process uploaded images
         for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
             const imageType = parsedTypes[i] || 'unknown';
             const imageIndex = parsedIndices[i] || i; // Use provided index or fallback to loop index
             
-            // Create the new standardized filename: registrationNumber_1.jpg, registrationNumber_2.jpg, etc.
-            const filename = `${registrationNumber}_${parseInt(imageIndex) + 1}.jpg`;
+            let imagePath;
+            let filename;
             
-            // Determine the correct car directory
-            const carDir = path.join('uploads', 'cars', registrationNumber);
-            if (!fs.existsSync(carDir)) {
-                fs.mkdirSync(carDir, { recursive: true });
+            if (cloudinary && file.url) {
+                // Cloudinary upload - file.url contains the Cloudinary URL
+                imagePath = file.url;
+                filename = `${registrationNumber}_${parseInt(imageIndex) + 1}`;
+                console.log(`☁️ Cloudinary image uploaded: ${imagePath}`);
+            } else {
+                // Local upload - handle file moving and path creation
+                filename = `${registrationNumber}_${parseInt(imageIndex) + 1}.jpg`;
+                
+                // Determine the correct car directory
+                const carDir = path.join('uploads', 'cars', registrationNumber);
+                if (!fs.existsSync(carDir)) {
+                    fs.mkdirSync(carDir, { recursive: true });
+                }
+                
+                // Move file from temp location to correct car directory
+                const oldPath = file.path;
+                const newPath = path.join(carDir, filename);
+                
+                try {
+                    // Move the file to the correct location
+                    fs.renameSync(oldPath, newPath);
+                    console.log(`📸 Moved file: ${path.basename(oldPath)} -> ${filename}`);
+                } catch (moveError) {
+                    console.error(`❌ Error moving file: ${moveError.message}`);
+                    // Continue with the old path if move fails
+                }
+                
+                // Create the new standardized path for easier WhatsApp bot fetching
+                imagePath = `uploads/cars/${registrationNumber}/${filename}`;
+                console.log(`📸 Local image saved: ${imagePath}`);
             }
-            
-            // Move file from temp location to correct car directory
-            const oldPath = file.path;
-            const newPath = path.join(carDir, filename);
-            
-            try {
-                // Move the file to the correct location
-                fs.renameSync(oldPath, newPath);
-                console.log(`📸 Moved file: ${path.basename(oldPath)} -> ${filename}`);
-            } catch (moveError) {
-                console.error(`❌ Error moving file: ${moveError.message}`);
-                // Continue with the old path if move fails
-            }
-            
-            // Create the new standardized path for easier WhatsApp bot fetching
-            const imagePath = `uploads/cars/${registrationNumber}/${filename}`;
             
             console.log(`📸 Processing image ${i + 1}: ${filename} -> ${imagePath} (type: ${imageType}, index: ${imageIndex})`);
             
@@ -1097,6 +1141,71 @@ app.get('/api/car-valuations/pdf', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('❌ Generate car valuations PDF error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// WhatsApp bot image fetching endpoint (no authentication required for bot access)
+app.get('/api/whatsapp/car-images/:registrationNumber', async (req, res) => {
+    try {
+        const { registrationNumber } = req.params;
+        
+        console.log(`📱 WhatsApp bot requesting images for car: ${registrationNumber}`);
+        
+        // Get car and its images from database
+        const carResult = await pool.query(`
+            SELECT c.*, 
+                   array_agg(ci.image_path) as image_paths,
+                   array_agg(ci.image_type) as image_types
+            FROM cars c
+            LEFT JOIN car_images ci ON c.id = ci.car_id
+            WHERE c.registration_number = $1
+            GROUP BY c.id
+        `, [registrationNumber]);
+        
+        if (carResult.rows.length === 0) {
+            return res.status(404).json({ 
+                error: 'Car not found',
+                message: `No car found with registration number: ${registrationNumber}`
+            });
+        }
+        
+        const car = carResult.rows[0];
+        
+        // Format response for WhatsApp bot
+        const response = {
+            car: {
+                id: car.id,
+                registration_number: car.registration_number,
+                brand: car.brand,
+                model: car.model,
+                year: car.year,
+                price: car.price,
+                description: car.description
+            },
+            images: []
+        };
+        
+        // Process images if they exist
+        if (car.image_paths && car.image_paths[0] !== null) {
+            car.image_paths.forEach((path, index) => {
+                const type = car.image_types[index] || 'unknown';
+                response.images.push({
+                    url: getImageUrl(path),
+                    type: type,
+                    sequence: index + 1
+                });
+        });
+        }
+        
+        console.log(`📱 WhatsApp bot response: ${response.images.length} images for ${registrationNumber}`);
+        res.json(response);
+        
+    } catch (error) {
+        console.error(`❌ WhatsApp bot image fetch error: ${error.message}`);
+        res.status(500).json({ 
+            error: 'Failed to fetch car images',
+            message: error.message 
+        });
     }
 });
 
