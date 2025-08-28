@@ -17,7 +17,7 @@ async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = n
       SELECT ci.image_path
       FROM car_images ci
       JOIN cars c ON ci.car_id = c.id
-      WHERE c.registration_number = $1 AND ci.image_type = $2baseUrl || process.env.NGROK_URL || process.env.PUBLIC_URL || 
+      WHERE c.registration_number = $1 AND ci.image_type = $2 
       LIMIT 1
     `, [registrationNumber, ['front', 'back', 'side', 'interior'][sequenceNumber - 1]]);
     
@@ -26,7 +26,7 @@ async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = n
       return null;
     }
     
-    const base = baseUrl || process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000';
+    const base ='http://27.111.72.51:3000';
     const imagePath = res.rows[0].image_path;
     
     // Return Cloudinary URL if it's already a full URL, otherwise construct local URL
@@ -174,7 +174,7 @@ async function handleBrowseUsedCars(session, userMessage) {
       
       // Handle "Change criteria" selection
       if (userMessage === "Change criteria" || userMessage === "Change My Criteria") {
-        session.step = 'browse_start';
+        session.step = 'browse_budget';
         session.carIndex = 0; // Reset car index
         session.filteredCars = []; // Clear filtered cars
         session.selectedCar = null; // Clear selected car
