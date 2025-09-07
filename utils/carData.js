@@ -397,7 +397,7 @@ async function getCarImagesByRegistration(pool, registrationNumber) {
 
 // Simple function to get image URLs by registration number (for WhatsApp bot)
 function getImageUrlsByRegistration(registrationNumber, baseUrl = null) {
-  const base = 'http://27.111.72.51:3000';
+  const base = 'http://localhost:3000';
   const imageUrls = [];
   
   // Check for images 1-4 using the new naming convention

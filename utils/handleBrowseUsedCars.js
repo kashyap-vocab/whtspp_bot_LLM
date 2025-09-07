@@ -26,7 +26,7 @@ async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = n
       return null;
     }
     
-    const base ='http://27.111.72.51:3000';
+    const base ='http://27.111.72.50:3000';
     const imagePath = res.rows[0].image_path;
     
     // Return Cloudinary URL if it's already a full URL, otherwise construct local URL
@@ -44,7 +44,9 @@ async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = n
 
 // Helper function to check if an image URL is publicly accessible
 function isPubliclyAccessible(baseUrl) {
-  return baseUrl && !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1');
+  const return_value =  baseUrl && !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1');
+  console.log("The value returned ....._--_>", return_value);
+  return
 }
 
 async function handleBrowseUsedCars(session, userMessage) {
@@ -492,11 +494,12 @@ async function getCarDisplayChunk(session, pool) {
         } else {
           // Fall back to the old path-based method
           if (firstImage.path.startsWith('uploads/')) {
-            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000'}/${firstImage.path}`;
-            imageUrl = 'http://27.111.72.51:3000'
+            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/${firstImage.path}`;
+            imageUrl = 'http://27.111.72.50:3000'
           } else {
-            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000'}/uploads/${firstImage.path}`;
-            imageUrl = 'http://27.111.72.51:3000'
+            //Update the Imageurl according to system global IP
+            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/uploads/${firstImage.path}`;
+            imageUrl = 'http://27.111.72.50:3000'
           }
           console.log(`📸 Using fallback path method for image: ${imageUrl}`);
         }
@@ -547,7 +550,7 @@ async function getCarDisplayChunk(session, pool) {
       
       // Try to find image in static images directory as fallback (only if no uploaded images)
       const staticImageFile = `${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_') + '.png';
-      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.51:3000'}/images/${staticImageFile}`;
+      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/images/${staticImageFile}`;
       
       console.log(`📸 Trying static image fallback: ${staticImageFile}`);
       
