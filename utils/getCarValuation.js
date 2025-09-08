@@ -1,4 +1,5 @@
 const { getAllBrands, getModelsByBrand } = require('./carData');
+const { validateYear, validateFuelType, validateTransmission, validateCondition, validatePhoneNumber, validateName, createValidationErrorMessage } = require('./inputValidation');
 const pool = require('../db');
 
 const YEAR_OPTIONS = [
@@ -87,7 +88,18 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'year':
-      session.year = userMessage;
+      console.log("📅 Validating year:", userMessage);
+      
+      const yearValidation = validateYear(userMessage);
+      if (!yearValidation.isValid) {
+        return {
+          message: createValidationErrorMessage("year", yearValidation.suggestions, YEAR_OPTIONS),
+          options: YEAR_OPTIONS
+        };
+      }
+      
+      console.log("✅ Valid year selected:", yearValidation.matchedOption);
+      session.year = yearValidation.matchedOption;
       session.step = 'fuel';
       return {
         message: `Great! What's the fuel type of your ${session.year} ${session.model}?`,
@@ -95,7 +107,18 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'fuel':
-      session.fuel = userMessage;
+      console.log("⛽ Validating fuel type:", userMessage);
+      
+      const fuelValidation = validateFuelType(userMessage);
+      if (!fuelValidation.isValid) {
+        return {
+          message: createValidationErrorMessage("fuel type", fuelValidation.suggestions, FUEL_OPTIONS),
+          options: FUEL_OPTIONS
+        };
+      }
+      
+      console.log("✅ Valid fuel type selected:", fuelValidation.matchedOption);
+      session.fuel = fuelValidation.matchedOption;
       session.step = 'kms';
       return {
         message: "Perfect! How many kilometers has your car been driven?",
@@ -119,19 +142,50 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'condition':
-      session.condition = userMessage;
+      console.log("⭐ Validating condition:", userMessage);
+      
+      const conditionValidation = validateCondition(userMessage);
+      if (!conditionValidation.isValid) {
+        return {
+          message: createValidationErrorMessage("car condition", conditionValidation.suggestions, CONDITION_OPTIONS),
+          options: CONDITION_OPTIONS
+        };
+      }
+      
+      console.log("✅ Valid condition selected:", conditionValidation.matchedOption);
+      session.condition = conditionValidation.matchedOption;
       session.step = 'name';
       return {
         message: "Great! We'd love to purchase your car. Let me collect your details:\n\n1. Your Name:"
       };
 
     case 'name':
-      session.name = userMessage;
+      console.log("👤 Validating name:", userMessage);
+      
+      const nameValidation = validateName(userMessage);
+      if (!nameValidation.isValid) {
+        return {
+          message: `Please enter a valid name (2-50 characters, letters only).\n\n1. Your Name:`
+        };
+      }
+      
+      console.log("✅ Valid name provided:", nameValidation.matchedOption);
+      session.name = nameValidation.matchedOption;
       session.step = 'phone';
       return { message: "2. Your Phone Number:" };
 
     case 'phone':
-      session.phone = userMessage;
+      console.log("📱 Validating phone number:", userMessage);
+      
+      const phoneValidation = validatePhoneNumber(userMessage);
+      if (!phoneValidation.isValid) {
+        return {
+          message: `Please enter a valid 10-digit Indian phone number.\n\n2. Your Phone Number:`
+        };
+      }
+      
+      console.log("✅ Valid phone number provided:", phoneValidation.matchedOption);
+      session.phone = phoneValidation.matchedOption;
       session.step = 'location';
       return { message: "3. Your Current Location/City:" };
 

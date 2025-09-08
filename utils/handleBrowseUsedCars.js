@@ -1,5 +1,6 @@
 const { formatRupees, getAvailableTypes, getAvailableBrands, getCarsByFilter , getCarImagesByRegistration} = require('./carData');
 const { getNextAvailableDays, getTimeSlots, getActualDateFromSelection, getActualDateFromDaySelection } = require('./timeUtils');
+const { validateBudget, validateCarType, validateBrand, createValidationErrorMessage } = require('./inputValidation');
 const fs = require('fs');
 const path = require('path');
 
@@ -44,9 +45,7 @@ async function constructImageUrl(registrationNumber, sequenceNumber, baseUrl = n
 
 // Helper function to check if an image URL is publicly accessible
 function isPubliclyAccessible(baseUrl) {
-  const return_value =  baseUrl && !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1');
-  console.log("The value returned ....._--_>", return_value);
-  return
+  return baseUrl && !baseUrl.includes('localhost') && !baseUrl.includes('127.0.0.1');
 }
 
 async function handleBrowseUsedCars(session, userMessage) {
@@ -80,23 +79,55 @@ async function handleBrowseUsedCars(session, userMessage) {
 
     case 'browse_budget':
       console.log("🔄 Step matched: browse_budget");
-      console.log("💰 Setting budget to:", userMessage);
-      console.log("🔍 Session before update:", JSON.stringify(session, null, 2));
-      session.budget = userMessage;
+      console.log("💰 Validating budget:", userMessage);
+      
+      const budgetValidation = validateBudget(userMessage);
+      if (!budgetValidation.isValid) {
+        const BUDGET_OPTIONS = [
+          "Under ₹5 Lakhs",
+          "₹5-10 Lakhs",
+          "₹10-15 Lakhs",
+          "₹15-20 Lakhs",
+          "Above ₹20 Lakhs"
+        ];
+        
+        return {
+          message: createValidationErrorMessage("budget range", budgetValidation.suggestions, BUDGET_OPTIONS),
+          options: BUDGET_OPTIONS
+        };
+      }
+      
+      console.log("✅ Valid budget selected:", budgetValidation.matchedOption);
+      session.budget = budgetValidation.matchedOption;
       session.step = 'browse_type';
       console.log("📝 Updated session step to:", session.step);
       console.log("💰 Updated session budget to:", session.budget);
-      console.log("🔍 Session after update:", JSON.stringify(session, null, 2));
+      
       const types = await getAvailableTypes(pool, session.budget);
       return {
-        message: `Perfect! ${userMessage} gives you excellent options. What type of car do you prefer?`,
+        message: `Perfect! ${budgetValidation.matchedOption} gives you excellent options. What type of car do you prefer?`,
         options: ['all Type', ...types]
       };
 
     case 'browse_type':
       console.log("🔄 Step matched: browse_type");
-      session.type = userMessage === 'all Type' ? 'all' : userMessage;
+      console.log("🚗 Validating car type:", userMessage);
+      
+      const typeValidation = validateCarType(userMessage);
+      if (!typeValidation.isValid) {
+        const types = await getAvailableTypes(pool, session.budget);
+        const TYPE_OPTIONS = ['all Type', ...types];
+        
+        return {
+          message: createValidationErrorMessage("car type", typeValidation.suggestions, TYPE_OPTIONS),
+          options: TYPE_OPTIONS
+        };
+      }
+      
+      console.log("✅ Valid car type selected:", typeValidation.matchedOption);
+      session.type = typeValidation.matchedOption === 'all Type' ? 'all' : typeValidation.matchedOption;
       session.step = 'browse_brand';
+      
       const brands = await getAvailableBrands(pool, session.budget, session.type);
       return {
         message: `Excellent choice! Which brand do you prefer?`,
@@ -105,8 +136,25 @@ async function handleBrowseUsedCars(session, userMessage) {
 
     case 'browse_brand':
       console.log("🔄 Step matched: browse_brand");
-      session.brand = userMessage === 'all Brand' ? 'all' : userMessage;
+      console.log("🏷️ Validating brand:", userMessage);
+      
+      // Get available brands for validation
+      const availableBrands = await getAvailableBrands(pool, session.budget, session.type);
+      const brandValidation = validateBrand(userMessage, availableBrands);
+      
+      if (!brandValidation.isValid) {
+        const BRAND_OPTIONS = ['all Brand', ...availableBrands];
+        
+        return {
+          message: createValidationErrorMessage("brand", brandValidation.suggestions, BRAND_OPTIONS),
+          options: BRAND_OPTIONS
+        };
+      }
+      
+      console.log("✅ Valid brand selected:", brandValidation.matchedOption);
+      session.brand = brandValidation.matchedOption === 'all Brand' ? 'all' : brandValidation.matchedOption;
       session.step = 'show_cars';
+      
       const cars = await getCarsByFilter(pool, session.budget, session.type, session.brand);
       session.filteredCars = cars;
       session.carIndex = 0;
@@ -123,22 +171,7 @@ async function handleBrowseUsedCars(session, userMessage) {
     case 'show_more_cars':
       console.log("🔄 Step matched: show_more_cars");
       
-      // Handle SELECT button responses
-      if (userMessage === "SELECT") {
-        const cars = session.filteredCars || [];
-        const currentCar = cars[session.carIndex];
-        
-        if (currentCar) {
-          session.selectedCar = `${currentCar.brand} ${currentCar.model} ${currentCar.variant}`;
-          session.step = 'car_selected_options';
-          return {
-            message: `Great choice! You've selected ${session.selectedCar}. What would you like to do next?`,
-            options: ["Book Test Drive", "Change My Criteria"]
-          };
-        }
-      }
-      
-      // Handle SELECT button responses (format: book_Brand_Model_Variant)
+      // Handle SELECT button responses with unique id first (format: book_Brand_Model_Variant)
       if (userMessage.startsWith("book_")) {
         const carId = userMessage;
         const cars = session.filteredCars || [];
@@ -151,6 +184,24 @@ async function handleBrowseUsedCars(session, userMessage) {
         
         if (selectedCar) {
           session.selectedCar = `${selectedCar.brand} ${selectedCar.model} ${selectedCar.variant}`;
+          session.step = 'car_selected_options';
+          return {
+            message: `Great choice! You've selected ${session.selectedCar}. What would you like to do next?`,
+            options: ["Book Test Drive", "Change My Criteria"]
+          };
+        }
+      }
+
+      // Fallback: if platform only returns the generic title "SELECT" and exactly one car is visible,
+      // assume the visible car is the intended selection
+      if (userMessage === "SELECT") {
+        const cars = session.filteredCars || [];
+        const startIndex = session.carIndex || 0;
+        const endIndex = Math.min(startIndex + 3, cars.length);
+        const visible = cars.slice(startIndex, endIndex);
+        if (visible.length === 1) {
+          const onlyCar = visible[0];
+          session.selectedCar = `${onlyCar.brand} ${onlyCar.model} ${onlyCar.variant}`;
           session.step = 'car_selected_options';
           return {
             message: `Great choice! You've selected ${session.selectedCar}. What would you like to do next?`,
@@ -419,7 +470,7 @@ async function handleBrowseUsedCars(session, userMessage) {
     case 'change_criteria_confirm':
       console.log("🔄 Step matched: change_criteria_confirm");
       if (userMessage.toLowerCase().includes("yes") || userMessage.toLowerCase().includes("proceed")) {
-        session.step = 'browse_start';
+        session.step = 'browse_budget';
         return await handleBrowseUsedCars(session, "start over");
       } else {
         return { message: "Okay, keeping your current selection intact." };
@@ -494,11 +545,10 @@ async function getCarDisplayChunk(session, pool) {
         } else {
           // Fall back to the old path-based method
           if (firstImage.path.startsWith('uploads/')) {
-            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/${firstImage.path}`;
+            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.50:3000'}/${firstImage.path}`;
             imageUrl = 'http://27.111.72.50:3000'
           } else {
-            //Update the Imageurl according to system global IP
-            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/uploads/${firstImage.path}`;
+            // imageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.50:3000'}/uploads/${firstImage.path}`;
             imageUrl = 'http://27.111.72.50:3000'
           }
           console.log(`📸 Using fallback path method for image: ${imageUrl}`);
@@ -550,7 +600,7 @@ async function getCarDisplayChunk(session, pool) {
       
       // Try to find image in static images directory as fallback (only if no uploaded images)
       const staticImageFile = `${car.brand}_${car.model}_${car.variant}`.replace(/\s+/g, '_') + '.png';
-      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://localhost:3000'}/images/${staticImageFile}`;
+      const staticImageUrl = `${process.env.NGROK_URL || process.env.PUBLIC_URL || 'http://27.111.72.50:3000'}/images/${staticImageFile}`;
       
       console.log(`📸 Trying static image fallback: ${staticImageFile}`);
       

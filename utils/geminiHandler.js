@@ -6,19 +6,25 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Context for the AI to understand the car dealership bot's purpose
 const SYSTEM_CONTEXT = `You are a helpful car dealership assistant for Sherpa Hyundai. Your role is to:
 1. Help customers with car-related queries (browsing used cars, valuations, contact info, about us)
-2. Politely redirect off-topic questions back to car-related services
-3. Be friendly and professional
-4. Always guide users back to the main menu options when they ask unrelated questions
+2. Provide intelligent, helpful responses to any customer message
+3. Be friendly, professional, and conversational
+4. Guide users to appropriate services based on their needs
+5. Handle both car-related and general questions with appropriate responses
 
-Main menu options:
-- 🚗 Browse Used Cars
-- 💰 Get Car Valuation  
-- 📞 Contact Our Team
-- ℹ️ About Us
+Available services:
+- 🚗 Browse Used Cars: View our inventory of pre-owned vehicles
+- 💰 Get Car Valuation: Get a free estimate for your current car
+- 📞 Contact Our Team: Speak with our sales representatives
+- ℹ️ About Us: Learn about Sherpa Hyundai
 
-When users ask off-topic questions (like cooking, weather, general chat), politely redirect them to car-related services.`;
+For car-related questions: Provide helpful information and guide to relevant services.
+For off-topic questions: Acknowledge politely and redirect to car services.
+For unclear messages: Ask clarifying questions and suggest relevant options.`;
 
-async function handleOutOfContextQuestion(userMessage) {
+async function handleOutOfContextQuestion(userMessage, retryCount = 0) {
+  const maxRetries = 2;
+  const timeoutMs = 10000; // 10 seconds timeout
+  
   try {
     // Check if we have a Gemini API key
     if (!process.env.GEMINI_API_KEY) {
@@ -26,29 +32,78 @@ async function handleOutOfContextQuestion(userMessage) {
       return getFallbackResponse(userMessage);
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // Validate API key format
+    if (!process.env.GEMINI_API_KEY.startsWith('AIza')) {
+      console.log("⚠️ Invalid Gemini API key format, using fallback response");
+      return getFallbackResponse(userMessage);
+    }
+
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: {
+        maxOutputTokens: 200,
+        temperature: 0.7,
+      }
+    });
 
     const prompt = `${SYSTEM_CONTEXT}
 
 User message: "${userMessage}"
 
-Please provide a friendly response that:
-1. Acknowledges their question
-2. Politely explains that you're here to help with car-related services
-3. Guides them back to the main menu options
-4. Keeps the response under 200 words
+Please provide a helpful, intelligent response that:
+1. Acknowledges their message appropriately
+2. If car-related: Provide helpful information and guide to relevant services
+3. If off-topic: Politely redirect to car services while being understanding
+4. If unclear: Ask clarifying questions and suggest relevant options
+5. Always be friendly, professional, and conversational
+6. Keep response under 200 words
+7. End with suggesting relevant menu options
 
 Response:`;
 
-    const result = await model.generateContent(prompt);
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Gemini API timeout')), timeoutMs);
+    });
+
+    const apiPromise = model.generateContent(prompt);
+    
+    const result = await Promise.race([apiPromise, timeoutPromise]);
     const response = await result.response;
     const text = response.text();
+    
+    // Validate response
+    if (!text || text.trim().length === 0) {
+      throw new Error('Empty response from Gemini API');
+    }
     
     console.log("🤖 Gemini response:", text);
     return text;
 
   } catch (error) {
-    console.error("❌ Error calling Gemini API:", error);
+    console.error("❌ Error calling Gemini API:", error.message);
+    
+    // Handle specific error types
+    if (error.message.includes('timeout')) {
+      console.log("⏰ Gemini API timeout, retrying...");
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+        return handleOutOfContextQuestion(userMessage, retryCount + 1);
+      }
+    } else if (error.message.includes('quota') || error.message.includes('limit')) {
+      console.log("📊 Gemini API quota exceeded, using fallback");
+    } else if (error.message.includes('permission') || error.message.includes('unauthorized')) {
+      console.log("🔐 Gemini API permission denied, using fallback");
+    } else if (error.message.includes('network') || error.message.includes('ECONNREFUSED')) {
+      console.log("🌐 Gemini API network error, using fallback");
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return handleOutOfContextQuestion(userMessage, retryCount + 1);
+      }
+    } else if (error.message.includes('Empty response')) {
+      console.log("📭 Empty response from Gemini API, using fallback");
+    }
+    
     return getFallbackResponse(userMessage);
   }
 }

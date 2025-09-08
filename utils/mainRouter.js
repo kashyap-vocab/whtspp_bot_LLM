@@ -12,6 +12,27 @@ async function mainRouter(session, message, pool) {
   console.log("🔍 Session object ID:", session._id || 'no_id');
   console.log("🔍 Session keys:", Object.keys(session));
 
+if (session.conversationEnded && (lowerMsg.includes('start') || lowerMsg.includes('begin') || lowerMsg.includes('new') || lowerMsg.includes('restart') || lowerMsg.includes('hi') || lowerMsg.includes('hello'))) {
+    delete session.conversationEnded;
+    // Clear all session data for fresh start
+    session.step = 'main_menu';
+    session.carIndex = 0;
+    session.filteredCars = [];
+    session.selectedCar = null;
+    session.budget = null;
+    session.type = null;
+    session.brand = null;
+    session.testDriveDate = null;
+    session.testDriveTime = null;
+    session.td_name = null;
+    session.td_phone = null;
+    session.td_license = null;
+    session.td_location_mode = null;
+    session.td_home_address = null;
+    session.td_drop_location = null;
+    console.log("🔄 Restarting conversation after end - cleared all session data");
+    return getMainMenu();
+  }
   // Check for restart keywords that should clear the ended conversation FIRST
   if (session.conversationEnded && (lowerMsg.includes('start') || lowerMsg.includes('begin') || lowerMsg.includes('new') || lowerMsg.includes('restart'))) {
     delete session.conversationEnded;
