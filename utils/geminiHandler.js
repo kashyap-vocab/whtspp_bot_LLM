@@ -39,7 +39,7 @@ async function handleOutOfContextQuestion(userMessage, retryCount = 0) {
     }
 
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
         maxOutputTokens: 200,
         temperature: 0.7,
@@ -84,7 +84,7 @@ Response:`;
     console.error("❌ Error calling Gemini API:", error.message);
     
     // Handle specific error types
-    if (error.message.includes('timeout')) {
+    if (error.message.inAIzaSyD1wgLyF9bP_DalyEduTOOMJsu8ldTEgz8cludes('timeout')) {
       console.log("⏰ Gemini API timeout, retrying...");
       if (retryCount < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
@@ -118,9 +118,19 @@ function getFallbackResponse(userMessage) {
   ];
   
   const isOffTopic = offTopicKeywords.some(keyword => lowerMsg.includes(keyword));
+  const iscarTopic = iscarKeywords.some(keyword => lowerMsg.includes(keyword));
   
-  if (isOffTopic) {
-    return `I understand you're asking about "${userMessage}", but I'm specifically here to help you with car-related services at Sherpa Hyundai! 🚗
+  if (iscarTopic) {
+    return `I'm here to help you with car-related services at Sherpa Hyundai! 🚗
+
+How can I assist you today?
+🚗 Browse Used Cars
+💰 Get Car Valuation
+📞 Contact Our Team
+ℹ️ About Us`;
+    
+  }
+  return `I understand you're asking about "${userMessage}", but I'm specifically here to help you with car-related services at Sherpa Hyundai! 🚗
 
 I can assist you with:
 🚗 Browse our used car inventory
@@ -129,16 +139,8 @@ I can assist you with:
 ℹ️ Learn more about us
 
 What would you like to explore today?`;
-  }
-  
   // For unclear messages, provide a general redirect
-  return `I'm here to help you with car-related services at Sherpa Hyundai! 🚗
-
-How can I assist you today?
-🚗 Browse Used Cars
-💰 Get Car Valuation
-📞 Contact Our Team
-ℹ️ About Us`;
+  
 }
 
 // Function to detect if a message is out of context

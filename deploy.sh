@@ -5,19 +5,13 @@ set -e
 
 echo "🚀 Starting deployment..."
 
-
-# Pull latest code (optional, if using git)
-# git pull origin main
-
 # Install dependencies
 echo "📦 Installing dependencies..."
 npm install
 
-# Build if needed (optional, if you have a build step)
-# npm run build
+# Run both apps in background
+echo "▶ Starting both apps..."
+npm run start 
 
-# Start your app
-echo "▶️ Starting app with npm run both..."
-npm run both
-
-echo "✅ Deployment finished!"
+echo "✅ Deployment finished! Both apps are running."
+wait  # keeps script alive until both processes exit

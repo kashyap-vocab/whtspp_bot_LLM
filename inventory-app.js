@@ -1498,7 +1498,7 @@ async function cleanupOldImagePaths() {
         console.log('🧹 Starting cleanup of old image paths...');
         
         // First, clean up the old "undefined" directory
-        await cleanupUndefinedDirectory();
+        //await cleanupUndefinedDirectory();
         
         // Get all cars with images
         const carsResult = await pool.query(`
@@ -1526,16 +1526,16 @@ async function cleanupOldImagePaths() {
                 
                 console.log(`📁 Found ${imageFiles.length} properly named images for ${registrationNumber}:`, imageFiles);
                 
-                if (imageFiles.length === 0) {
-                    // No images found in directory, delete all image records for this car
-                    console.log(`🗑️ No images found for ${registrationNumber}, deleting all image records`);
-                    const deleteResult = await pool.query(
-                        'DELETE FROM car_images WHERE car_id = $1',
-                        [car.id]
-                    );
-                    deletedCount += deleteResult.rowCount;
-                    console.log(`✅ Deleted ${deleteResult.rowCount} broken image records for ${registrationNumber}`);
-                }
+                // if (imageFiles.length === 0) {
+                //     // No images found in directory, delete all image records for this car
+                //     console.log(`🗑️ No images found for ${registrationNumber}, deleting all image records`);
+                //     const deleteResult = await pool.query(
+                //         'DELETE FROM car_images WHERE car_id = $1',
+                //         [car.id]
+                //     );
+                //     deletedCount += deleteResult.rowCount;
+                //     console.log(`✅ Deleted ${deleteResult.rowCount} broken image records for ${registrationNumber}`);
+                // }
             } else {
                 // Directory doesn't exist, delete all image records for this car
                 console.log(`🗑️ Directory not found for ${registrationNumber}, deleting all image records`);

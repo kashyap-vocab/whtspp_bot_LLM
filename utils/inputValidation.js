@@ -147,10 +147,10 @@ function validateTransmission(userInput) {
  */
 function validateCondition(userInput) {
   const validConditions = [
-    "⭐⭐⭐⭐⭐ Excellent (Like new)",
-    "⭐⭐⭐⭐ Good (Minor wear)",
-    "⭐⭐⭐ Average (Some issues)",
-    "⭐⭐ Fair (Needs some work)"
+    "Excellent (Like new)",
+    " Good (Minor wear)",
+    "Average (Some issues)",
+    " Fair (Needs some work)"
   ];
   
   return validateOption(userInput, validConditions);

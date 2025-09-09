@@ -6,7 +6,7 @@ const YEAR_OPTIONS = [
 ];
 
 const FUEL_OPTIONS = [
-  "⛽ Petrol", "🛢️ Diesel", "🔋 CNG", "⚡ Electric"
+  "Petrol", "Diesel", "CNG", "Electric"
 ];
 
 const KM_OPTIONS = [
@@ -26,10 +26,10 @@ const OWNER_OPTIONS = [
 ];
 
 const CONDITION_OPTIONS = [
-  "⭐⭐⭐⭐⭐ Excellent (Like new)",
-  "⭐⭐⭐⭐ Good (Minor wear)",
-  "⭐⭐⭐ Average (Normal wear)",
-  "⭐⭐ Fair (Needs some work)"
+  "Excellent (Like new)",
+  "Good (Minor wear)",
+  "Average (Normal wear)",
+  "Fair (Needs some work)"
 ];
 
 async function handleCarValuationStep(session, userMessage) {
