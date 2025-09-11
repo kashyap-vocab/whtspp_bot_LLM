@@ -5,7 +5,6 @@ const axios = require('axios');
 
 // Import database connection
 const pool = require('./db');
-
 const { routeMessage } = require('./utils/mainRouter');
 const sessions = {}; 
 
