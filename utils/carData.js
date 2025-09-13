@@ -84,9 +84,8 @@ function formatRupees(amount) {
 
 async function getAvailableTypes(pool, budget) {
   try {
-    // Query the database to get actual car types from your Excel data
-    // We'll infer the type from the model/variant names
-    let query = 'SELECT DISTINCT model, variant FROM cars WHERE 1=1';
+    // Query the database to get actual car types from the type column
+    let query = 'SELECT DISTINCT type FROM cars WHERE type IS NOT NULL AND type != \'\'';
     let params = [];
     let paramCount = 0;
     
@@ -121,7 +120,7 @@ async function getAvailableTypes(pool, budget) {
       }
     }
     
-    query += ' ORDER BY model, variant';
+    query += ' ORDER BY type';
     
     console.log('🔍 Types query:', query);
     console.log('📊 Types params:', params);
@@ -131,30 +130,43 @@ async function getAvailableTypes(pool, budget) {
       return await pool.query(query, params);
     });
     
-    // Infer car types from model names
-    const typeMap = new Map();
-    res.rows.forEach(row => {
-      const model = row.model?.toLowerCase() || '';
-      const variant = row.variant?.toLowerCase() || '';
-      
-      // Map common model names to car types
-      if (model.includes('swift') || model.includes('i10') || model.includes('alto') || model.includes('celerio')) {
-        typeMap.set('Hatchback', true);
-      } else if (model.includes('city') || model.includes('verna') || model.includes('amaze') || model.includes('dzire')) {
-        typeMap.set('Sedan', true);
-      } else if (model.includes('creta') || model.includes('venue') || model.includes('brezza') || model.includes('xuv')) {
-        typeMap.set('SUV', true);
-      } else if (model.includes('thar') || model.includes('scorpio')) {
-        typeMap.set('SUV', true);
-      } else if (model.includes('innova') || model.includes('ertiga') || model.includes('carens')) {
-        typeMap.set('MUV', true);
-      }
-    });
+    // Get types from database
+    const types = res.rows.map(row => row.type).filter(type => type && type.trim() !== '');
     
-    // Convert to array and add default types if none found
-    const types = Array.from(typeMap.keys());
+    // If no types found in database, fall back to inferring from model names
     if (types.length === 0) {
-      types.push('Hatchback', 'Sedan', 'SUV', 'MUV');
+      console.log('📝 No types found in database, inferring from model names...');
+      const fallbackQuery = 'SELECT DISTINCT model, variant FROM cars WHERE 1=1';
+      const fallbackRes = await retryQuery(pool, async () => {
+        return await pool.query(fallbackQuery, params);
+      });
+      
+      const typeMap = new Map();
+      fallbackRes.rows.forEach(row => {
+        const model = row.model?.toLowerCase() || '';
+        const variant = row.variant?.toLowerCase() || '';
+        
+        // Map common model names to car types
+        if (model.includes('swift') || model.includes('i10') || model.includes('alto') || model.includes('celerio')) {
+          typeMap.set('Hatchback', true);
+        } else if (model.includes('city') || model.includes('verna') || model.includes('amaze') || model.includes('dzire')) {
+          typeMap.set('Sedan', true);
+        } else if (model.includes('creta') || model.includes('venue') || model.includes('brezza') || model.includes('xuv')) {
+          typeMap.set('SUV', true);
+        } else if (model.includes('thar') || model.includes('scorpio')) {
+          typeMap.set('SUV', true);
+        } else if (model.includes('innova') || model.includes('ertiga') || model.includes('carens')) {
+          typeMap.set('MUV', true);
+        }
+      });
+      
+      const inferredTypes = Array.from(typeMap.keys());
+      if (inferredTypes.length === 0) {
+        inferredTypes.push('Hatchback', 'Sedan', 'SUV', 'MUV');
+      }
+      
+      console.log(`📈 Found ${inferredTypes.length} car types from model inference:`, inferredTypes);
+      return inferredTypes;
     }
     
     console.log(`📈 Found ${types.length} car types from database:`, types);
@@ -257,10 +269,15 @@ async function getCarsByFilter(pool, budget, type, brand) {
       params.push(brand);
     }
 
-    // Filter by type (infer from model/variant names)
+    // Filter by type - use the actual type column first, fallback to model inference
     if (type && type !== 'Any' && type !== 'all') {
-      let typeConditions = [];
+      // First try to match against the type column
+      paramCount++;
+      query += ` AND (type = $${paramCount}`;
+      params.push(type);
       
+      // Add fallback conditions for model inference if type column doesn't have data
+      let typeConditions = [];
       if (type === 'Hatchback') {
         typeConditions = ["model ILIKE '%swift%'", "model ILIKE '%i10%'", "model ILIKE '%alto%'", "model ILIKE '%celerio%'"];
       } else if (type === 'Sedan') {
@@ -272,8 +289,9 @@ async function getCarsByFilter(pool, budget, type, brand) {
       }
       
       if (typeConditions.length > 0) {
-        query += ` AND (${typeConditions.join(' OR ')})`;
+        query += ` OR (type IS NULL AND (${typeConditions.join(' OR ')}))`;
       }
+      query += ')';
     }
 
     // Filter by budget range

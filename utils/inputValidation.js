@@ -2,8 +2,33 @@
  * Input validation helper functions for all conversation flows
  */
 
+// Levenshtein distance for fuzzy matching
+function levenshteinDistance(str1, str2) {
+  const matrix = [];
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[str2.length][str1.length];
+}
+
 /**
- * Validates if user input matches any of the provided options
+ * Validates if user input matches any of the provided options with enhanced spelling correction
  * @param {string} userInput - The user's input
  * @param {Array} validOptions - Array of valid options
  * @param {boolean} caseSensitive - Whether to do case-sensitive matching
@@ -36,8 +61,25 @@ function validateOption(userInput, validOptions, caseSensitive = false) {
     (caseSensitive ? option : option.toLowerCase()).startsWith(input)
   );
   
-  // Combine and deduplicate suggestions
-  const suggestions = [...new Set([...fuzzyMatches, ...partialMatches])].slice(0, 3);
+  // Enhanced spelling correction using Levenshtein distance
+  const spellingMatches = validOptions.filter(option => {
+    const normalizedOption = caseSensitive ? option : option.toLowerCase();
+    const distance = levenshteinDistance(input, normalizedOption);
+    // Allow matches with distance <= 2 for short words, <= 3 for longer words
+    const maxDistance = input.length <= 5 ? 2 : 3;
+    return distance <= maxDistance && distance > 0;
+  });
+  
+  // Sort spelling matches by distance (closest first)
+  const sortedSpellingMatches = spellingMatches.sort((a, b) => {
+    const distanceA = levenshteinDistance(input, caseSensitive ? a : a.toLowerCase());
+    const distanceB = levenshteinDistance(input, caseSensitive ? b : b.toLowerCase());
+    return distanceA - distanceB;
+  });
+  
+  // Combine and deduplicate suggestions, prioritizing exact matches
+  const allSuggestions = [...new Set([...fuzzyMatches, ...partialMatches, ...sortedSpellingMatches])];
+  const suggestions = allSuggestions.slice(0, 3);
   
   return {
     isValid: false,
@@ -77,6 +119,17 @@ function validateCarType(userInput) {
     "MUV"
   ];
   
+  // Handle special keywords that should not be validated as car types
+  const specialKeywords = ['start over', 'continue', 'change', 'back', 'help', 'menu'];
+  if (specialKeywords.includes(userInput.toLowerCase())) {
+    return {
+      isValid: false,
+      matchedOption: null,
+      suggestions: [],
+      reason: 'special_keyword'
+    };
+  }
+  
   return validateOption(userInput, validTypes);
 }
 
@@ -98,9 +151,7 @@ function validateBrand(userInput, availableBrands) {
  */
 function validateYear(userInput) {
   const validYears = [
-    "2024", "2023", "2022", "2021", "2020", "2019", "2018", "2017", "2016", "2015",
-    "2014", "2013", "2012", "2011", "2010", "2009", "2008", "2007", "2006", "2005",
-    "2004", "2003", "2002", "2001", "2000", "Before 2000"
+    "2024", "2023", "2022", "2021", "2020", "Older than 2020"
   ];
   
   return validateOption(userInput, validYears);
@@ -157,37 +208,73 @@ function validateCondition(userInput) {
 }
 
 /**
- * Validates phone number format
+ * Validates phone number format - exactly 10 digits, numbers only
  * @param {string} userInput - User's phone input
  * @returns {Object} - Validation result
  */
 function validatePhoneNumber(userInput) {
-  // Remove all non-digit characters
-  const cleanPhone = userInput.replace(/\D/g, '');
+  const trimmedInput = userInput.trim();
   
-  // Check if it's a valid Indian phone number (10 digits)
-  const isValid = /^[6-9]\d{9}$/.test(cleanPhone);
+  // Check if input contains only digits
+  const isOnlyDigits = /^\d+$/.test(trimmedInput);
+  
+  if (!isOnlyDigits) {
+    return {
+      isValid: false,
+      matchedOption: null,
+      suggestions: ["Please enter only numbers (no spaces, dashes, or other characters)"]
+    };
+  }
+  
+  // Check if it's exactly 10 digits
+  const isExactly10Digits = trimmedInput.length === 10;
+  
+  if (!isExactly10Digits) {
+    return {
+      isValid: false,
+      matchedOption: null,
+      suggestions: [`Please enter exactly 10 digits (you entered ${trimmedInput.length} digits)`]
+    };
+  }
+  
+  // Check if it's a valid Indian phone number (starts with 6-9)
+  const isValidIndianNumber = /^[6-9]\d{9}$/.test(trimmedInput);
+  
+  if (!isValidIndianNumber) {
+    return {
+      isValid: false,
+      matchedOption: null,
+      suggestions: ["Please enter a valid Indian phone number (should start with 6, 7, 8, or 9)"]
+    };
+  }
   
   return {
-    isValid: isValid,
-    matchedOption: isValid ? cleanPhone : null,
-    suggestions: isValid ? [] : ["Please enter a valid 10-digit Indian phone number"]
+    isValid: true,
+    matchedOption: trimmedInput,
+    suggestions: []
   };
 }
 
 /**
- * Validates name input
+ * Validates name input - only alphabets allowed
  * @param {string} userInput - User's name input
  * @returns {Object} - Validation result
  */
 function validateName(userInput) {
-  // Check if name contains only letters, spaces, and common name characters
-  const isValid = /^[a-zA-Z\s\.\-']{2,50}$/.test(userInput.trim());
+  const trimmedInput = userInput.trim();
+  
+  // Check if name contains only letters and spaces (alphabets only)
+  const isValid = /^[a-zA-Z\s]{2,50}$/.test(trimmedInput);
+  
+  // Additional check: must contain at least one letter
+  const hasLetters = /[a-zA-Z]/.test(trimmedInput);
+  
+  const finalValid = isValid && hasLetters;
   
   return {
-    isValid: isValid,
-    matchedOption: isValid ? userInput.trim() : null,
-    suggestions: isValid ? [] : ["Please enter a valid name (2-50 characters, letters only)"]
+    isValid: finalValid,
+    matchedOption: finalValid ? trimmedInput : null,
+    suggestions: finalValid ? [] : ["Please enter a valid name using only alphabets (letters) and spaces (2-50 characters)"]
   };
 }
 

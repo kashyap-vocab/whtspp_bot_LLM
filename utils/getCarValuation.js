@@ -1,6 +1,8 @@
 const { getAllBrands, getModelsByBrand } = require('./carData');
 const { validateYear, validateFuelType, validateTransmission, validateCondition, validatePhoneNumber, validateName, createValidationErrorMessage } = require('./inputValidation');
 const pool = require('../db');
+const { parseUserIntent } = require('./geminiHandler');
+const { saveUserProfile, extractUserPreferences } = require('./userProfileManager');
 
 const YEAR_OPTIONS = [
   "2024", "2023", "2022", "2021", "2020", "Older than 2020"
@@ -73,6 +75,53 @@ async function handleCarValuationStep(session, userMessage) {
   switch (state) {
     case 'start':
     case 'valuation_start':
+      // AI parsing for smart flow skipping
+      try {
+        const ai = await parseUserIntent(pool, userMessage);
+        console.log("🔍 DEBUG: Valuation AI parsing result:", ai);
+        if (ai && ai.confidence > 0.6 && ai.intent === 'valuation') {
+          const e = ai.entities || {};
+          
+          // Auto-apply parsed entities
+          if (e.brand) session.brand = e.brand;
+          if (e.model) session.model = e.model;
+          if (e.year) session.year = e.year;
+          if (e.fuel) session.fuel = e.fuel;
+          
+          // Smart flow skipping based on what we have
+          if (session.brand && session.model && session.year && session.fuel) {
+            // All car details provided, skip to kms
+            session.step = 'kms';
+            return {
+              message: `Perfect! I've got your car details:\n🚗 ${session.year} ${session.brand} ${session.model} (${session.fuel})\n\nHow many kilometers has your car been driven?`,
+              options: KM_OPTIONS
+            };
+          } else if (session.brand && session.model && session.year) {
+            // Brand, model, year provided, ask for fuel
+            session.step = 'fuel';
+            return {
+              message: `Great! I've got your car details:\n🚗 ${session.year} ${session.brand} ${session.model}\n\nWhat's the fuel type?`,
+              options: FUEL_OPTIONS
+            };
+          } else if (session.brand && session.model) {
+            // Brand and model provided, ask for year
+            session.step = 'year';
+            return {
+              message: `Excellent! I've got your car:\n🚗 ${session.brand} ${session.model}\n\nWhat year is it?`,
+              options: YEAR_OPTIONS
+            };
+          } else if (session.brand) {
+            // Only brand provided, ask for model
+            session.step = 'model';
+            const models = await getModelsByBrand(pool, session.brand);
+            return {
+              message: `Perfect! I've got your brand: ${session.brand}\n\nWhich model do you have?`,
+              options: [...models, `Other ${session.brand} models`]
+            };
+          }
+        }
+      } catch (e) { console.log('AI parsing skipped:', e.message); }
+      
       session.step = 'brand';
       return {
         message: "Great! I'll help you get a valuation for your car. Let's start with some basic details.\n\nFirst, which brand is your car?",
@@ -80,6 +129,40 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'brand':
+      // Check for AI parsing of additional details
+      try {
+        const ai = await parseUserIntent(pool, userMessage);
+        console.log("🔍 DEBUG: Brand case AI parsing result:", ai);
+        if (ai && ai.confidence > 0.6 && ai.intent === 'valuation') {
+          const e = ai.entities || {};
+          if (e.brand) session.brand = e.brand;
+          if (e.model) session.model = e.model;
+          if (e.year) session.year = e.year;
+          if (e.fuel) session.fuel = e.fuel;
+          
+          // Smart flow skipping
+          if (session.brand && session.model && session.year && session.fuel) {
+            session.step = 'kms';
+            return {
+              message: `Perfect! I've got your car details:\n🚗 ${session.year} ${session.brand} ${session.model} (${session.fuel})\n\nHow many kilometers has your car been driven?`,
+              options: KM_OPTIONS
+            };
+          } else if (session.brand && session.model && session.year) {
+            session.step = 'fuel';
+            return {
+              message: `Great! I've got your car details:\n🚗 ${session.year} ${session.brand} ${session.model}\n\nWhat's the fuel type?`,
+              options: FUEL_OPTIONS
+            };
+          } else if (session.brand && session.model) {
+            session.step = 'year';
+            return {
+              message: `Excellent! I've got your car:\n🚗 ${session.brand} ${session.model}\n\nWhat year is it?`,
+              options: YEAR_OPTIONS
+            };
+          }
+        }
+      } catch (e) { console.log('AI parsing skipped:', e.message); }
+      
       if (userMessage === 'Other brands') {
         session.step = 'other_brand_input';
         return { message: "Please type the brand name of your car." };
@@ -186,6 +269,16 @@ async function handleCarValuationStep(session, userMessage) {
       
       console.log("✅ Valid condition selected:", conditionValidation.matchedOption);
       session.condition = conditionValidation.matchedOption;
+      
+      // Check if user already has details stored
+      if (session.td_name && session.td_phone) {
+        console.log("👤 User already has details stored, using for valuation");
+        session.name = session.td_name;
+        session.phone = session.td_phone;
+        session.step = 'location';
+        return { message: "Great! I have your details saved:\n👤 Name: " + session.td_name + "\n📱 Phone: " + session.td_phone + "\n\n3. Your Current Location/City:" };
+      }
+      
       session.step = 'name';
       return {
         message: "Great! We'd love to purchase your car. Let me collect your details:\n\n1. Your Name:"
@@ -290,8 +383,25 @@ Thank you for choosing Sherpa Hyundai! 😊`,
 
     case 'done':
       if (userMessage === "Explore") {
-        // Reset session and go back to main menu
+        // Save user profile before clearing session data
+        try {
+          const userPreferences = extractUserPreferences(session);
+          if (userPreferences.phone) {
+            const profileResult = await saveUserProfile(userPreferences);
+            if (profileResult.success) {
+              console.log(`✅ User profile ${profileResult.action} before valuation session reset`);
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Could not save user profile:', error.message);
+        }
+
+        // Clear stored details and reset session for fresh start
         session.step = 'main_menu';
+        session.td_name = null;
+        session.td_phone = null;
+        session.name = null;
+        session.phone = null;
         return {
           message: "Great! Let's explore more options. What would you like to do?",
           options: [
@@ -302,8 +412,21 @@ Thank you for choosing Sherpa Hyundai! 😊`,
           ]
         };
       } else if (userMessage === "End Conversation") {
+        // Save user profile before ending conversation
+        try {
+          const userPreferences = extractUserPreferences(session);
+          if (userPreferences.phone) {
+            const profileResult = await saveUserProfile(userPreferences);
+            if (profileResult.success) {
+              console.log(`✅ User profile ${profileResult.action} before valuation session end`);
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Could not save user profile:', error.message);
+        }
+
         // End conversation with thank you note
-        session.step = 'conversation_ended';
+        session.conversationEnded = true;
         return {
           message: `Thank you for choosing Sherpa Hyundai! 🙏
 

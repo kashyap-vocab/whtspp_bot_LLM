@@ -1,4 +1,6 @@
 const { pool } = require('../db');
+const { parseUserIntent } = require('./geminiHandler');
+const { saveUserProfile, extractUserPreferences } = require('./userProfileManager');
 
 async function handleContactUsStep(session, userMessage) {
   const state = session.step || 'contact_menu';
@@ -9,6 +11,7 @@ async function handleContactUsStep(session, userMessage) {
     case 'contact_start':
     case 'contact_menu':
       session.step = 'contact_menu'; // Reset step in case it’s called from main menu
+      // AI proposal system removed - using direct AI integration in flows instead
              if (userMessage.includes("Call")) {
          session.step = 'done';
          return {
@@ -81,6 +84,72 @@ async function handleContactUsStep(session, userMessage) {
 
     case 'callback_time':
       session.callback_time = userMessage;
+      
+      // Check if user already has details stored
+      if (session.td_name && session.td_phone) {
+        console.log("👤 User already has details stored, using for callback");
+        session.callback_name = session.td_name;
+        session.callback_phone = session.td_phone;
+        session.step = 'done';
+        
+        try {
+          // Save callback request to database
+          await pool.query(
+            `INSERT INTO callback_requests (name, phone, reason, preferred_time)
+             VALUES ($1, $2, $3, $4)`,
+            [
+              session.callback_name,
+              session.callback_phone,
+              'General inquiry',
+              session.callback_time
+            ]
+          );
+
+          return {
+            message: `✅ Perfect ${session.callback_name}! Your callback is scheduled:
+
+📋 CALLBACK CONFIRMED:
+👤 Name: ${session.callback_name}
+📱 Phone: ${session.callback_phone}
+⏰ Preferred Time: ${session.callback_time}
+
+📞 What to Expect:
+✅ Call within 2 hours if during business hours
+✅ Our expert will assist with your inquiry
+🕒 Business Hours: Mon-Sat: 9 AM - 8 PM
+
+Need urgent help?
+📞 Call: +91-9876543210
+📍 Visit: 123 MG Road, Bangalore
+Thank you! 😊`,
+            options: ["Explore", "End Conversation"]
+          };
+        } catch (error) {
+          console.error('Error saving callback request:', error);
+          
+          // Return success message even if database save fails
+          return {
+            message: `✅ Perfect ${session.callback_name}! Your callback is scheduled:
+
+📋 CALLBACK CONFIRMED:
+👤 Name: ${session.callback_name}
+📱 Phone: ${session.callback_phone}
+⏰ Preferred Time: ${session.callback_time}
+
+📞 What to Expect:
+✅ Call within 2 hours if during business hours
+✅ Our expert will assist with your inquiry
+🕒 Business Hours: Mon-Sat: 9 AM - 8 PM
+
+Need urgent help?
+📞 Call: +91-9876543210
+📍 Visit: 123 MG Road, Bangalore
+Thank you! 😊`,
+            options: ["Explore", "End Conversation"]
+          };
+        }
+      }
+      
       session.step = 'callback_name';
       return { message: "Great! Please provide your name:" };
 
@@ -91,8 +160,64 @@ async function handleContactUsStep(session, userMessage) {
 
     case 'contact_callback_phone':
       session.callback_phone = userMessage;
-      session.step = 'callback_reason';
-      return { message: "What do you need help with?" };
+      session.step = 'done';
+
+      try {
+        // Save callback request to database
+        await pool.query(
+          `INSERT INTO callback_requests (name, phone, reason, preferred_time)
+           VALUES ($1, $2, $3, $4)`,
+          [
+            session.callback_name,
+            session.callback_phone,
+            'General inquiry',
+            session.callback_time
+          ]
+        );
+
+        return {
+          message: `✅ Perfect ${session.callback_name}! Your callback is scheduled:
+
+📋 CALLBACK CONFIRMED:
+👤 Name: ${session.callback_name}
+📱 Phone: ${session.callback_phone}
+⏰ Preferred Time: ${session.callback_time}
+
+📞 What to Expect:
+✅ Call within 2 hours if during business hours
+✅ Our expert will assist with your inquiry
+🕒 Business Hours: Mon-Sat: 9 AM - 8 PM
+
+Need urgent help?
+📞 Call: +91-9876543210
+📍 Visit: 123 MG Road, Bangalore
+Thank you! 😊`,
+          options: ["Explore", "End Conversation"]
+        };
+      } catch (error) {
+        console.error('Error saving callback request:', error);
+        
+        // Return success message even if database save fails
+        return {
+          message: `✅ Perfect ${session.callback_name}! Your callback is scheduled:
+
+📋 CALLBACK CONFIRMED:
+👤 Name: ${session.callback_name}
+📱 Phone: ${session.callback_phone}
+⏰ Preferred Time: ${session.callback_time}
+
+📞 What to Expect:
+✅ Call within 2 hours if during business hours
+✅ Our expert will assist with your inquiry
+🕒 Business Hours: Mon-Sat: 9 AM - 8 PM
+
+Need urgent help?
+📞 Call: +91-9876543210
+📍 Visit: 123 MG Road, Bangalore
+Thank you! 😊`,
+          options: ["Explore", "End Conversation"]
+        };
+      }
 
     case 'callback_reason':
       session.callback_reason = userMessage;
@@ -157,8 +282,25 @@ Thank you! 😊`,
 
     case 'done':
       if (userMessage === "Explore") {
-        // Reset session and go back to main menu
+        // Save user profile before clearing session data
+        try {
+          const userPreferences = extractUserPreferences(session);
+          if (userPreferences.phone) {
+            const profileResult = await saveUserProfile(userPreferences);
+            if (profileResult.success) {
+              console.log(`✅ User profile ${profileResult.action} before contact session reset`);
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Could not save user profile:', error.message);
+        }
+
+        // Clear stored details and reset session for fresh start
         session.step = 'main_menu';
+        session.td_name = null;
+        session.td_phone = null;
+        session.callback_name = null;
+        session.callback_phone = null;
         return {
           message: "Great! Let's explore more options. What would you like to do?",
           options: [
@@ -169,8 +311,21 @@ Thank you! 😊`,
           ]
         };
       } else if (userMessage === "End Conversation") {
+        // Save user profile before ending conversation
+        try {
+          const userPreferences = extractUserPreferences(session);
+          if (userPreferences.phone) {
+            const profileResult = await saveUserProfile(userPreferences);
+            if (profileResult.success) {
+              console.log(`✅ User profile ${profileResult.action} before contact session end`);
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Could not save user profile:', error.message);
+        }
+
         // End conversation with thank you note
-        session.step = 'conversation_ended';
+        session.conversationEnded = true;
         return {
           message: `Thank you for choosing Sherpa Hyundai! 🙏
 

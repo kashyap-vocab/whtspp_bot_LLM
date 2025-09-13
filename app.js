@@ -6,7 +6,9 @@ const axios = require('axios');
 // Import database connection
 const pool = require('./db');
 const { routeMessage } = require('./utils/mainRouter');
-const sessions = {}; 
+const sessions = {};
+const lastMessageTime = {}; // Track last message time per user
+const lastSentMessage = {}; // Track last sent message per user 
 
 const app = express();
 app.use(bodyParser.json());
@@ -74,6 +76,12 @@ app.post('/webhook', async (req, res) => {
     const msg = entry?.messages?.[0];
     const from = msg?.from;
 
+    // Only process if this is a message from a user (not status updates, etc.)
+    if (!msg || !from) {
+      console.log('📸 Webhook event ignored (no message or sender)');
+      return res.sendStatus(200);
+    }
+
     // Support for text and button replies
     const userMsg =
       msg?.text?.body ||
@@ -82,6 +90,14 @@ app.post('/webhook', async (req, res) => {
 
     if (from && userMsg) {
       if (!sessions[from]) sessions[from] = {};
+
+      // Prevent duplicate processing within 2 seconds
+      const now = Date.now();
+      if (lastMessageTime[from] && (now - lastMessageTime[from]) < 2000) {
+        console.log('⏰ Duplicate message ignored (too soon)');
+        return res.sendStatus(200);
+      }
+      lastMessageTime[from] = now;
 
       console.log('\n📩 Incoming Message');
       console.log('From:', from);
@@ -110,11 +126,22 @@ app.post('/webhook', async (req, res) => {
         console.log("📸 No additional message needed (button already included in previous messages)");
         // Don't send any additional message
       } else if (response && response.message) {
+        // Check if this is the same message as last sent (prevent duplicates)
+        const messageKey = response.message + JSON.stringify(response.options || []);
+        if (lastSentMessage[from] === messageKey) {
+          console.log("📸 Duplicate message prevented");
+          return res.sendStatus(200);
+        }
+        lastSentMessage[from] = messageKey;
+        
         await sendWhatsAppMessage(from, response.message, response.options || [], response.messages || []);
       } else {
         console.error("❌ Invalid response from routeMessage:", response);
         await sendWhatsAppMessage(from, "I apologize, but I encountered an error. Please try again.", [], []);
       }
+    } else {
+      // No user message found, ignore this webhook event
+      console.log('📸 Webhook event ignored (no user message)');
     }
 
     res.sendStatus(200);

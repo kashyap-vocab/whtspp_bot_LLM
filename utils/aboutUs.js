@@ -22,6 +22,19 @@ async function handleAboutUsStep(session, userMessage) {
   switch (step) {
     case "about_start":
     case "about_menu":
+      // Light AI: if user asks free-text like "where are you located"
+      try {
+        const { parseUserIntent } = require('./geminiHandler');
+        const pool = require('../db');
+        const ai = await parseUserIntent(pool, userMessage);
+        const threshold = parseFloat(process.env.AI_PROPOSAL_CONFIDENCE || '0.75');
+        if (ai && ai.confidence >= threshold && ai.intent === 'about') {
+          return {
+            message: "I can share our story, services, awards, or locations. What would you like to see?",
+            options: aboutUsMenu
+          };
+        }
+      } catch (_) {}
       session.step = "about_selection";
       return {
         message: "Welcome to Sherpa Hyundai! Here's what you'd like to know about us:",
