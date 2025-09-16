@@ -8,7 +8,8 @@ const pool = require('./db');
 const { routeMessage } = require('./utils/mainRouter');
 const sessions = {};
 const lastMessageTime = {}; // Track last message time per user
-const lastSentMessage = {}; // Track last sent message per user 
+const lastSentMessage = {}; // Track last sent message per user
+const lastSentTime = {}; // Track when last message was sent 
 
 const app = express();
 app.use(bodyParser.json());
@@ -112,7 +113,7 @@ app.post('/webhook', async (req, res) => {
 
            let response;
       try {
-        response = await routeMessage(sessions[from], userMsg, pool);
+        response = await routeMessage(sessions[from], userMsg, pool, from);
         console.log('Session After:', JSON.stringify(sessions[from], null, 2));
         console.log('Response:', JSON.stringify(response, null, 2));
         console.log('----------------------------------');
@@ -126,13 +127,22 @@ app.post('/webhook', async (req, res) => {
         console.log("📸 No additional message needed (button already included in previous messages)");
         // Don't send any additional message
       } else if (response && response.message) {
-        // Check if this is the same message as last sent (prevent duplicates)
+        // Check if this is the same message as last sent (prevent duplicates within 5 seconds)
         const messageKey = response.message + JSON.stringify(response.options || []);
-        if (lastSentMessage[from] === messageKey) {
-          console.log("📸 Duplicate message prevented");
+        const now = Date.now();
+        const timeSinceLastSent = now - (lastSentTime[from] || 0);
+        
+        if (lastSentMessage[from] === messageKey && timeSinceLastSent < 5000) {
+          console.log("📸 Duplicate message prevented (within 5 seconds)");
+          console.log("🔍 Last sent message:", lastSentMessage[from]);
+          console.log("🔍 Current message:", messageKey);
+          console.log("🔍 Time since last sent:", timeSinceLastSent + "ms");
           return res.sendStatus(200);
         }
+        
         lastSentMessage[from] = messageKey;
+        lastSentTime[from] = now;
+        console.log("📤 Sending new message to WhatsApp");
         
         await sendWhatsAppMessage(from, response.message, response.options || [], response.messages || []);
       } else {

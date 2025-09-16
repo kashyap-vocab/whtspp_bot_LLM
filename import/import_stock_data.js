@@ -1,5 +1,5 @@
 const xlsx = require('xlsx');
-const { pool } = require('../db');
+const pool = require('../db');
 
 async function importStockData() {
   try {
@@ -17,21 +17,7 @@ async function importStockData() {
       console.log('📄 Sample row:', rows[0]);
     }
 
-    // Create the cars table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS cars (
-        id SERIAL PRIMARY KEY,
-        make TEXT,
-        model TEXT,
-        variant TEXT,
-        manufacturing_year INTEGER,
-        fuel_type TEXT,
-        mileage_km INTEGER,
-        estimated_selling_price TEXT,
-        type TEXT,
-        ready_for_sales BOOLEAN DEFAULT true
-      )
-    `);
+    // Table already exists, no need to create
 
     // Clear existing data
     await pool.query('DELETE FROM cars');
@@ -65,8 +51,8 @@ async function importStockData() {
         }
 
         await pool.query(`
-          INSERT INTO cars (make, model, variant, manufacturing_year, fuel_type, mileage_km, estimated_selling_price, type, ready_for_sales)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          INSERT INTO cars (brand, model, variant, year, fuel_type, mileage, price, type, color, engine_cc, transmission, status, registration_number)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         `, [
           make.trim(),
           model.trim(),
@@ -76,7 +62,11 @@ async function importStockData() {
           mileageKm,
           estimatedSellingPrice.toString(),
           type.trim(),
-          true
+          row['Color'] || 'Unknown',
+          parseInt(row['Cubic Capacity (CC)']) || 0,
+          row['Transmission Type'] || 'Manual',
+          'available',
+          row['Registration Number'] || 'N/A'
         ]);
 
         importedCount++;
@@ -91,26 +81,26 @@ async function importStockData() {
     console.log(`⚠️ Skipped: ${skippedCount} rows`);
 
     // Show statistics
-    const stats = await pool.query('SELECT make, COUNT(*) as count FROM cars GROUP BY make ORDER BY count DESC');
+    const stats = await pool.query('SELECT brand, COUNT(*) as count FROM cars GROUP BY brand ORDER BY count DESC');
     console.log('\n📈 Cars by brand:');
     stats.rows.forEach(row => {
-      console.log(`   ${row.make}: ${row.count} cars`);
+      console.log(`   ${row.brand}: ${row.count} cars`);
     });
 
     // Show price ranges
     const priceStats = await pool.query(`
       SELECT 
         CASE 
-          WHEN CAST(estimated_selling_price AS INTEGER) < 500000 THEN 'Under ₹5 Lakhs'
-          WHEN CAST(estimated_selling_price AS INTEGER) < 1000000 THEN '₹5-10 Lakhs'
-          WHEN CAST(estimated_selling_price AS INTEGER) < 1500000 THEN '₹10-15 Lakhs'
-          WHEN CAST(estimated_selling_price AS INTEGER) < 2000000 THEN '₹15-20 Lakhs'
+          WHEN CAST(price AS INTEGER) < 500000 THEN 'Under ₹5 Lakhs'
+          WHEN CAST(price AS INTEGER) < 1000000 THEN '₹5-10 Lakhs'
+          WHEN CAST(price AS INTEGER) < 1500000 THEN '₹10-15 Lakhs'
+          WHEN CAST(price AS INTEGER) < 2000000 THEN '₹15-20 Lakhs'
           ELSE 'Above ₹20 Lakhs'
         END as price_range,
         COUNT(*) as count
       FROM cars 
       GROUP BY price_range 
-      ORDER BY MIN(CAST(estimated_selling_price AS INTEGER))
+      ORDER BY MIN(CAST(price AS INTEGER))
     `);
     
     console.log('\n💰 Cars by price range:');

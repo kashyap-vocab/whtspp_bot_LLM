@@ -40,9 +40,9 @@ async function handleContactUsStep(session, userMessage) {
         return {
           message: "Perfect! Our team will call you back. What's the best time to reach you?",
           options: [
-            "🌅 Morning(9-12PM)",
-            "🌞 Afternoon(12-4PM)",
-            "🌆 Evening(4PM-8PM)"
+            "🌅 Morning (9-12 PM)",
+            "🌞 Afternoon (12-4 PM)",
+            "🌆 Evening (4-8 PM)"
           ]
         };
       }
@@ -302,7 +302,7 @@ Thank you! 😊`,
         session.callback_name = null;
         session.callback_phone = null;
         return {
-          message: "Great! Let's explore more options. What would you like to do?",
+          message: "Is there anything else I can help you with today?",
           options: [
             "🚗 Browse Used Cars",
             "💰 Get Car Valuation", 

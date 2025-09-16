@@ -3,47 +3,40 @@ const { parseUserIntent } = require('./geminiHandler');
 // Parse natural language date/time input for test drive scheduling
 async function parseDateTimeInput(userMessage) {
   try {
-    const prompt = `Parse the following natural language date/time input for a test drive booking.
-    Return ONLY valid JSON with keys: date, time, confidence (0-1).
-    
-    IMPORTANT: Extract BOTH date and time from the input. Be generous with confidence.
-    
-    Date Patterns:
-    - "today" = "Today"
-    - "tomorrow" = "Tomorrow" 
-    - "tommorow" = "Tomorrow" (typo handling)
-    - "24th" = "24th"
-    - "25th December" = "25th December"
-    - "next Tuesday" = "Next Tuesday"
-    - "this Friday" = "This Friday"
-    - "I want for tomorrow" = "Tomorrow"
-    - "I need tomorrow" = "Tomorrow"
-    
-    Time Patterns:
-    - "5pm" = "5:00 PM"
-    - "5:30 pm" = "5:30 PM"
-    - "at 5pm" = "5:00 PM"
-    - "around 5pm" = "5:00 PM"
-    - "evening" = "Evening (4-8 PM)"
-    - "morning" = "Morning (9-12 PM)"
-    - "afternoon" = "Afternoon (12-4 PM)"
-    
-    Combined Examples:
-    - "I want for tomorrow at 5pm" = date: "Tomorrow", time: "5:00 PM"
-    - "tomorrow evening" = date: "Tomorrow", time: "Evening (4-8 PM)"
-    - "today at 6:30 pm" = date: "Today", time: "6:30 PM"
-    - "24th at 6pm" = date: "24th", time: "6:00 PM"
-    - "next Tuesday afternoon" = date: "Next Tuesday", time: "Afternoon (12-4 PM)"
-    - "tomorrow" = date: "Tomorrow", time: null
-    - "today" = date: "Today", time: null
-    - "7pm" = date: null, time: "7:00 PM"
-    - "evening" = date: null, time: "Evening (4-8 PM)"
-    
-    User input: "${userMessage}"`;
 
-    // Create a mock pool object for the parseUserIntent function
-    const mockPool = null;
-    const response = await parseUserIntent(mockPool, prompt);
+    // Use geminiWrapper directly for date/time parsing
+    const geminiWrapper = require('./geminiWrapper');
+    const systemPrompt = `You are a helpful assistant that extracts date and time information from user messages.
+
+SYSTEM INSTRUCTIONS:
+1. Parse the user's message to extract date and time information
+2. Return ONLY valid JSON with date and time fields
+3. Handle natural language expressions intelligently
+4. Use standard formats for dates and times
+
+DATE EXAMPLES:
+- "today" = date: "Today", time: null
+- "tomorrow" = date: "Tomorrow", time: null
+- "next week" = date: "Next Week", time: null
+- "24th" = date: "24th", time: null
+
+TIME EXAMPLES:
+- "7pm" = date: null, time: "7:00 PM"
+- "evening" = date: null, time: "Evening (4-8 PM)"
+
+COMBINED EXAMPLES:
+- "today at 7pm" = date: "Today", time: "7:00 PM"
+- "tomorrow evening" = date: "Tomorrow", time: "Evening (4-8 PM)"
+
+OUTPUT FORMAT:
+{
+  "date": "string_or_null",
+  "time": "string_or_null",
+  "confidence": 0.0-1.0
+}`;
+
+    const userPrompt = `Extract date and time from: "${userMessage}"`;
+    const response = await geminiWrapper.parseDateTime(systemPrompt, userPrompt);
     
     if (response && response.confidence > 0.5) {
       return {

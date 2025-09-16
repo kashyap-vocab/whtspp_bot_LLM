@@ -1,4 +1,4 @@
-# 🧪 Comprehensive Test Summary
+cle# 🧪 Comprehensive Test Summary
 
 ## Overview
 The WhatsApp bot with Gemini API integration has been thoroughly tested across all major components and scenarios.
@@ -64,7 +64,7 @@ The WhatsApp bot with Gemini API integration has been thoroughly tested across a
 ## 🔧 Technical Implementation
 
 ### Gemini API Integration
-- **Model**: gemini-1.5-flash
+- **Model**: gemini-2.5-flash
 - **Context**: Car dealership assistant role
 - **Response Style**: Friendly, professional, redirecting
 - **Fallback**: Keyword-based detection when API unavailable
