@@ -199,7 +199,7 @@ module.exports = {
 };
 
 // LLM-powered intent/entity extraction using structured system prompts with load balancing
-async function parseUserIntent(pool, userMessage) {
+async function parseUserIntent(pool, userMessage, flowContext = 'general') {
   try {
     if (!process.env.GEMINI_API_KEY) {
       console.log('🤖 AI disabled or missing GEMINI_API_KEY');
@@ -246,6 +246,13 @@ CONTEXT AWARENESS:
 - In valuation flow: "City", "Swift", "i20" are model names, not browse intents
 - In browse flow: "City", "Swift", "i20" are car models for browsing
 - Always consider the current conversation context
+
+UNRELATED TOPIC DETECTION:
+- "is_unrelated": true if message is completely off-topic (weather, food, sports, etc.)
+- "is_unrelated": false if message is car-related or unclear
+- "topic": "car_related" for automotive topics, "off_topic" for non-car topics, "unclear" for ambiguous messages
+- Examples of off-topic: "What's the weather?", "I'm hungry", "Tell me about cricket"
+- Examples of car-related: "My car is Honda", "I want to buy a car", "What's your address?"
 
 VALUATION INTENT EXAMPLES:
 - "my car is honda" → intent: "valuation", brand: "Honda"
@@ -344,7 +351,9 @@ Return ONLY this JSON structure:
     "condition": "string|null"
   },
   "confidence": 0.0-1.0,
-  "context": "browse_used_cars_flow"
+  "context": "${flowContext}_flow",
+  "is_unrelated": true|false,
+  "topic": "car_related|off_topic|unclear"
 }
 
 EXAMPLES:

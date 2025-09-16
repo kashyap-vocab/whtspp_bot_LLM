@@ -1,8 +1,13 @@
 const { getAllBrands, getModelsByBrand } = require('./carData');
-const { validateYear, validateFuelType, validateTransmission, validateCondition, validatePhoneNumber, validateName, createValidationErrorMessage } = require('./inputValidation');
+const { validateYear, validateFuelType, validateTransmission, validateCondition, validatePhoneNumber, validateName, validateBrand, createValidationErrorMessage } = require('./inputValidation');
 const pool = require('../db');
 const { parseUserIntent } = require('./geminiHandler');
 const { saveUserProfile, extractUserPreferences } = require('./userProfileManager');
+const { 
+  checkUnrelatedTopic, 
+  validateStepInput, 
+  validateOptionInput
+} = require('./llmUtils');
 
 const YEAR_OPTIONS = [
   "2024", "2023", "2022", "2021", "2020", "Older than 2020"
@@ -75,6 +80,43 @@ async function handleCarValuationStep(session, userMessage) {
   switch (state) {
     case 'start':
     case 'valuation_start':
+      // Check for unrelated topics first
+      const topicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (topicCheck.isUnrelated && topicCheck.confidence > 0.7) {
+        return {
+          message: topicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Skip AI processing for predefined menu options
+      const predefinedOptions = [
+        '🚗 Browse Used Cars', '💰 Get Car Valuation', '📞 Contact Our Team', 'ℹ️ About Us',
+        'Under ₹5 Lakhs', '₹5-10 Lakhs', '₹10-15 Lakhs', '₹15-20 Lakhs', 'Above ₹20 Lakhs',
+        'Hatchback', 'Sedan', 'SUV', 'MUV', 'Luxury', 'Show me all types',
+        'Maruti Suzuki', 'Hyundai', 'Tata', 'Mahindra', 'Kia', 'All brand'
+      ];
+      
+      if (predefinedOptions.includes(userMessage)) {
+        // Get brands first for quick response
+        const brands = await getAllBrands(pool);
+        session.step = 'brand';
+        return {
+          message: "Great! I'll help you get a valuation for your car. Let's start with some basic details about your vehicle.\n\nFirst, which brand is your car?",
+          options: [...brands, "Other brands"]
+        };
+      } else {
+        // Check if it's an invalid input (contains numbers or special characters)
+        const hasInvalidChars = /[0-9@#$%^&*()_+=\[\]{}|;':",./<>?]/.test(userMessage);
+        if (hasInvalidChars && userMessage.length > 10) {
+          const brands = await getAllBrands(pool);
+          return {
+            message: "I didn't understand that brand. Please select from the available options:",
+            options: [...brands, "Other brands"]
+          };
+        }
+      }
+
       // Get brands first for quick response
       const brands = await getAllBrands(pool);
       
@@ -88,6 +130,22 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'brand':
+      // Store current step before unrelated topic check
+      const currentBrandStep = session.step;
+      
+      // Check for unrelated topics first
+      const brandTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (brandTopicCheck.isUnrelated && brandTopicCheck.confidence > 0.7) {
+        // Preserve the current step
+        session.step = currentBrandStep;
+        
+        const brands = await getAllBrands(pool);
+        return {
+          message: "I'm here to help with car valuations! Which brand is your car?",
+          options: [...brands, "Other brands"]
+        };
+      }
+
       // Check for AI parsing of additional details (with timeout)
       try {
         const aiPromise = parseUserIntent(pool, userMessage);
@@ -158,6 +216,28 @@ async function handleCarValuationStep(session, userMessage) {
         }
       }
       
+      // Check if user typed something instead of selecting from options
+      const availableBrands = await getAllBrands(pool);
+      const brandOptions = [...availableBrands, "Other brands"];
+      const brandOptionCheck = await validateOptionInput(userMessage, brandOptions, { step: 'brand', flowContext: 'car_valuation' });
+      
+      if (brandOptionCheck.matchesOption && brandOptionCheck.confidence > 0.7) {
+        // User typed something that matches an option, use the matched option
+        userMessage = brandOptionCheck.matchedOption;
+      } else if (!brandOptions.includes(userMessage)) {
+        // User typed something that doesn't match any option, check if it's brand-related
+        const brandValidation = validateBrand(userMessage, availableBrands);
+        if (!brandValidation.isValid) {
+          return {
+            message: "I didn't understand that brand. Please select from the options:",
+            options: brandOptions
+          };
+        } else {
+          // It's a valid brand, use it
+          userMessage = brandValidation.matchedOption;
+        }
+      }
+
       if (userMessage === 'Other brands') {
         session.step = 'other_brand_input';
         return { message: "Please type the brand name of your car." };
@@ -172,11 +252,36 @@ async function handleCarValuationStep(session, userMessage) {
       }
 
     case 'other_brand_input':
+      // Check for unrelated topics first
+      const otherBrandTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (otherBrandTopicCheck.isUnrelated && otherBrandTopicCheck.confidence > 0.7) {
+        return {
+          message: otherBrandTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       session.brand = userMessage;
       session.step = 'other_model_input';
       return { message: `Perfect! Please write down which model car you have.` };
 
     case 'model':
+      // Store current step before unrelated topic check
+      const currentModelStep = session.step;
+      
+      // Check for unrelated topics first
+      const modelTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (modelTopicCheck.isUnrelated && modelTopicCheck.confidence > 0.7) {
+        // Preserve the current step
+        session.step = currentModelStep;
+        
+        const models = await getModelsByBrand(pool, session.brand);
+        return {
+          message: "I'm here to help with car valuations! Which model do you have?",
+          options: [...models, "Other models"]
+        };
+      }
+
       // AI parsing for additional details
       try {
         const ai = await parseUserIntent(pool, userMessage);
@@ -289,6 +394,15 @@ async function handleCarValuationStep(session, userMessage) {
       }
 
     case 'other_model_input':
+      // Check for unrelated topics first
+      const otherModelTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (otherModelTopicCheck.isUnrelated && otherModelTopicCheck.confidence > 0.7) {
+        return {
+          message: otherModelTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       session.model = userMessage;
       session.step = 'year';
       return {
@@ -297,6 +411,15 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'year':
+      // Check for unrelated topics first
+      const yearTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (yearTopicCheck.isUnrelated && yearTopicCheck.confidence > 0.7) {
+        return {
+          message: "I'm here to help with car valuations! What year is your car?",
+          options: YEAR_OPTIONS
+        };
+      }
+
       // AI parsing for additional details
       try {
         const ai = await parseUserIntent(pool, userMessage);
@@ -365,6 +488,26 @@ async function handleCarValuationStep(session, userMessage) {
         }
       }
       
+      // Check if user typed something instead of selecting from options
+      const yearOptionCheck = await validateOptionInput(userMessage, YEAR_OPTIONS, { step: 'year', flowContext: 'car_valuation' });
+      
+      if (yearOptionCheck.matchesOption && yearOptionCheck.confidence > 0.7) {
+        // User typed something that matches an option, use the matched option
+        userMessage = yearOptionCheck.matchedOption;
+      } else if (!YEAR_OPTIONS.includes(userMessage)) {
+        // User typed something that doesn't match any option, check if it's year-related
+        const yearValidation = validateYear(userMessage);
+        if (!yearValidation.isValid) {
+          return {
+            message: createValidationErrorMessage("year", yearValidation.suggestions, YEAR_OPTIONS),
+            options: YEAR_OPTIONS
+          };
+        } else {
+          // It's a valid year, use it
+          userMessage = yearValidation.matchedOption;
+        }
+      }
+
       console.log("📅 Validating year:", userMessage);
       
       const yearValidation = validateYear(userMessage);
@@ -384,6 +527,15 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'fuel':
+      // Check for unrelated topics first
+      const fuelTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (fuelTopicCheck.isUnrelated && fuelTopicCheck.confidence > 0.7) {
+        return {
+          message: "I'm here to help with car valuations! What's the fuel type?",
+          options: FUEL_OPTIONS
+        };
+      }
+
       // Check if AI has already extracted the fuel
       if (session.fuel && session.fuel !== userMessage) {
         // AI has already extracted the fuel, skip to next step
@@ -435,6 +587,26 @@ async function handleCarValuationStep(session, userMessage) {
         console.error("Error parsing fuel input:", error);
       }
       
+      // Check if user typed something instead of selecting from options
+      const fuelOptionCheck = await validateOptionInput(userMessage, FUEL_OPTIONS, { step: 'fuel', flowContext: 'car_valuation' });
+      
+      if (fuelOptionCheck.matchesOption && fuelOptionCheck.confidence > 0.7) {
+        // User typed something that matches an option, use the matched option
+        userMessage = fuelOptionCheck.matchedOption;
+      } else if (!FUEL_OPTIONS.includes(userMessage)) {
+        // User typed something that doesn't match any option, check if it's fuel-related
+        const fuelValidation = validateFuelType(userMessage);
+        if (!fuelValidation.isValid) {
+          return {
+            message: createValidationErrorMessage("fuel type", fuelValidation.suggestions, FUEL_OPTIONS),
+            options: FUEL_OPTIONS
+          };
+        } else {
+          // It's a valid fuel type, use it
+          userMessage = fuelValidation.matchedOption;
+        }
+      }
+
       console.log("⛽ Validating fuel type:", userMessage);
       
       const fuelValidation = validateFuelType(userMessage);
@@ -454,6 +626,15 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'kms':
+      // Check for unrelated topics first
+      const kmsTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (kmsTopicCheck.isUnrelated && kmsTopicCheck.confidence > 0.7) {
+        return {
+          message: "I'm here to help with car valuations! How many kilometers has your car been driven?",
+          options: KM_OPTIONS
+        };
+      }
+
       // Check if AI has already extracted the kms
       if (session.kms && session.kms !== userMessage) {
         // AI has already extracted the kms, skip to next step
@@ -498,6 +679,14 @@ async function handleCarValuationStep(session, userMessage) {
         console.error("Error parsing kms input:", error);
       }
       
+      // Check if user typed something instead of selecting from options
+      const kmsOptionCheck = await validateOptionInput(userMessage, KM_OPTIONS, { step: 'kms', flowContext: 'car_valuation' });
+      
+      if (kmsOptionCheck.matchesOption && kmsOptionCheck.confidence > 0.7) {
+        // User typed something that matches an option, use the matched option
+        userMessage = kmsOptionCheck.matchedOption;
+      }
+
       session.kms = userMessage;
       session.step = 'owner';
       return {
@@ -506,6 +695,15 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'owner':
+      // Check for unrelated topics first
+      const ownerTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (ownerTopicCheck.isUnrelated && ownerTopicCheck.confidence > 0.7) {
+        return {
+          message: "I'm here to help with car valuations! How many owners has this car had?",
+          options: OWNER_OPTIONS
+        };
+      }
+
       // Check if AI has already extracted the owner
       if (session.owner && session.owner !== userMessage) {
         // AI has already extracted the owner, skip to next step
@@ -543,6 +741,14 @@ async function handleCarValuationStep(session, userMessage) {
         console.error("Error parsing owner input:", error);
       }
       
+      // Check if user typed something instead of selecting from options
+      const ownerOptionCheck = await validateOptionInput(userMessage, OWNER_OPTIONS, { step: 'owner', flowContext: 'car_valuation' });
+      
+      if (ownerOptionCheck.matchesOption && ownerOptionCheck.confidence > 0.7) {
+        // User typed something that matches an option, use the matched option
+        userMessage = ownerOptionCheck.matchedOption;
+      }
+
       session.owner = userMessage;
       session.step = 'condition';
       return {
@@ -551,6 +757,15 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'condition':
+      // Check for unrelated topics first
+      const conditionTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (conditionTopicCheck.isUnrelated && conditionTopicCheck.confidence > 0.7) {
+        return {
+          message: "I'm here to help with car valuations! What's the overall condition of your car?",
+          options: CONDITION_OPTIONS
+        };
+      }
+
       // Check if AI has already extracted the condition
       if (session.condition && session.condition !== userMessage) {
         // AI has already extracted the condition, skip to next step
@@ -607,6 +822,26 @@ async function handleCarValuationStep(session, userMessage) {
         console.error("Error parsing condition input:", error);
       }
       
+      // Check if user typed something instead of selecting from options
+      const conditionOptionCheck = await validateOptionInput(userMessage, CONDITION_OPTIONS, { step: 'condition', flowContext: 'car_valuation' });
+      
+      if (conditionOptionCheck.matchesOption && conditionOptionCheck.confidence > 0.7) {
+        // User typed something that matches an option, use the matched option
+        userMessage = conditionOptionCheck.matchedOption;
+      } else if (!CONDITION_OPTIONS.includes(userMessage)) {
+        // User typed something that doesn't match any option, check if it's condition-related
+        const conditionValidation = validateCondition(userMessage);
+        if (!conditionValidation.isValid) {
+          return {
+            message: createValidationErrorMessage("car condition", conditionValidation.suggestions, CONDITION_OPTIONS),
+            options: CONDITION_OPTIONS
+          };
+        } else {
+          // It's a valid condition, use it
+          userMessage = conditionValidation.matchedOption;
+        }
+      }
+
       console.log("⭐ Validating condition:", userMessage);
       
       const conditionValidation = validateCondition(userMessage);
@@ -635,6 +870,15 @@ async function handleCarValuationStep(session, userMessage) {
       };
 
     case 'name':
+      // Check for unrelated topics first
+      const nameTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (nameTopicCheck.isUnrelated && nameTopicCheck.confidence > 0.7) {
+        return {
+          message: nameTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       // Check if AI has already extracted the name
       if (session.name && session.name !== userMessage) {
         // AI has already extracted the name, skip to next step
@@ -666,6 +910,15 @@ async function handleCarValuationStep(session, userMessage) {
         console.error("Error parsing name input:", error);
       }
       
+      // Validate name input using LLM
+      const nameStepValidation = await validateStepInput(userMessage, 'name', { step: 'name', flowContext: 'car_valuation' });
+      
+      if (!nameStepValidation.isValid || nameStepValidation.confidence < 0.7) {
+        return {
+          message: `Please enter a valid name (2-50 characters, letters only).\n\n1. Your Name:`
+        };
+      }
+
       console.log("👤 Validating name:", userMessage);
       
       const nameValidation = validateName(userMessage);
@@ -681,6 +934,15 @@ async function handleCarValuationStep(session, userMessage) {
       return { message: "2. Your Phone Number:" };
 
     case 'phone':
+      // Check for unrelated topics first
+      const phoneTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (phoneTopicCheck.isUnrelated && phoneTopicCheck.confidence > 0.7) {
+        return {
+          message: phoneTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       // Check if AI has already extracted the phone
       if (session.phone && session.phone !== userMessage) {
         // AI has already extracted the phone, skip to next step
@@ -712,6 +974,15 @@ async function handleCarValuationStep(session, userMessage) {
         console.error("Error parsing phone input:", error);
       }
       
+      // Validate phone input using LLM
+      const phoneStepValidation = await validateStepInput(userMessage, 'phone', { step: 'phone', flowContext: 'car_valuation' });
+      
+      if (!phoneStepValidation.isValid || phoneStepValidation.confidence < 0.7) {
+        return {
+          message: `Please enter a valid 10-digit Indian phone number.\n\n2. Your Phone Number:`
+        };
+      }
+
       console.log("📱 Validating phone number:", userMessage);
       
       const phoneValidation = validatePhoneNumber(userMessage);
@@ -727,6 +998,24 @@ async function handleCarValuationStep(session, userMessage) {
       return { message: "3. Your Current Location/City:" };
 
     case 'location':
+      // Check for unrelated topics first
+      const locationTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (locationTopicCheck.isUnrelated && locationTopicCheck.confidence > 0.7) {
+        return {
+          message: locationTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Validate location input using LLM
+      const locationStepValidation = await validateStepInput(userMessage, 'address', { step: 'location', flowContext: 'car_valuation' });
+      
+      if (!locationStepValidation.isValid || locationStepValidation.confidence < 0.7) {
+        return {
+          message: "Please provide your location (City/Area):"
+        };
+      }
+
       // Check if AI has already extracted the location
       if (session.location && session.location !== userMessage) {
         // AI has already extracted the location, skip to done
@@ -800,6 +1089,15 @@ Thank you for choosing Sherpa Hyundai! 😊`,
       };
 
     case 'done':
+      // Check for unrelated topics first
+      const doneTopicCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (doneTopicCheck.isUnrelated && doneTopicCheck.confidence > 0.7) {
+        return {
+          message: doneTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       if (userMessage === "Explore") {
         // Save user profile before clearing session data
         try {
@@ -860,6 +1158,15 @@ Have a great day! 😊`
       return { message: "Something went wrong. Please try again." };
 
     default:
+      // Check for unrelated topics in unknown states
+      const defaultUnrelatedCheck = await checkUnrelatedTopic(userMessage, 'car_valuation');
+      if (defaultUnrelatedCheck.isUnrelated && defaultUnrelatedCheck.confidence > 0.7) {
+        return {
+          message: defaultUnrelatedCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+      
       return { message: "Something went wrong. Please try again." };
   }
 }

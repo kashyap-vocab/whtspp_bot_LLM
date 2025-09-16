@@ -1,6 +1,11 @@
 const { pool } = require('../db');
 const { parseUserIntent } = require('./geminiHandler');
 const { saveUserProfile, extractUserPreferences } = require('./userProfileManager');
+const { 
+  checkUnrelatedTopic, 
+  validateStepInput, 
+  validateOptionInput
+} = require('./llmUtils');
 
 async function handleContactUsStep(session, userMessage) {
   const state = session.step || 'contact_menu';
@@ -10,8 +15,72 @@ async function handleContactUsStep(session, userMessage) {
   switch (state) {
     case 'contact_start':
     case 'contact_menu':
-      session.step = 'contact_menu'; // Reset step in case it’s called from main menu
-      // AI proposal system removed - using direct AI integration in flows instead
+      // Check for unrelated topics first
+      const contactTopicCheck = await checkUnrelatedTopic(userMessage, 'contact_us');
+      if (contactTopicCheck.isUnrelated && contactTopicCheck.confidence > 0.7) {
+        return {
+          message: contactTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      session.step = 'contact_menu'; // Reset step in case it's called from main menu
+      
+      // Enhanced skip logic - parse user requirements
+      try {
+        const ai = await parseUserIntent(pool, userMessage);
+        const threshold = parseFloat(process.env.AI_PROPOSAL_CONFIDENCE || '0.75');
+        if (ai && ai.confidence >= threshold && (ai.intent === 'contact' || ai.intent === 'contact_us')) {
+          const e = ai.entities || {};
+          
+          // Auto-apply if contact method is present
+          if (e.contact_method) {
+            if (e.contact_method.includes('call') || e.contact_method.includes('phone')) {
+              session.step = 'done';
+              return {
+                message: `Perfect! Here are our direct contact numbers for immediate assistance:
+
+📞 CALL US DIRECTLY:
+🏢 Main Showroom - Bangalore:
+📞 Sales: +91-9876543210
+📞 Service: +91-9876543211
+🕒 Mon-Sat: 9 AM - 8 PM, Sun: 10 AM - 6 PM
+
+🏢 Branch - Electronic City:
+📞 Sales: +91-9876543212
+🕒 Mon-Sat: 9 AM - 8 PM
+
+🆘 Emergency Support:
+📞 24/7 Helpline: +91-9876543213
+
+💡 Pro Tip: Mention you contacted us via WhatsApp for priority assistance!`,
+                options: ["Explore", "End Conversation"]
+              };
+            } else if (e.contact_method.includes('callback') || e.contact_method.includes('call back')) {
+              session.step = 'callback_time';
+              return {
+                message: "Perfect! Our team will call you back. What's the best time to reach you?",
+                options: [
+                  "🌅 Morning (9-12 PM)",
+                  "🌞 Afternoon (12-4 PM)",
+                  "🌆 Evening (4-8 PM)"
+                ]
+              };
+            } else if (e.contact_method.includes('visit') || e.contact_method.includes('showroom')) {
+              session.step = 'visit_location';
+              return {
+                message: "Great! Which location would you like to visit?",
+                options: [
+                  "🏢 Main Showroom - Bangalore",
+                  "🏢 Branch - Electronic City"
+                ]
+              };
+            }
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ Contact AI parsing failed:', error.message);
+      }
              if (userMessage.includes("Call")) {
          session.step = 'done';
          return {
@@ -83,7 +152,24 @@ async function handleContactUsStep(session, userMessage) {
       };
 
     case 'callback_time':
-      session.callback_time = userMessage;
+      // Check for unrelated topics first
+      const callbackTopicCheck = await checkUnrelatedTopic(userMessage, 'contact_us');
+      if (callbackTopicCheck.isUnrelated && callbackTopicCheck.confidence > 0.7) {
+        return {
+          message: callbackTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Validate if user typed time preference instead of selecting option
+      const timeOptions = ["🌅 Morning (9-12 PM)", "🌞 Afternoon (12-4 PM)", "🌆 Evening (4-8 PM)"];
+      const validation = await validateOptionInput(userMessage, timeOptions, { context: 'callback_time' });
+      
+      if (validation.isValid && validation.confidence > 0.7) {
+        session.callback_time = validation.matchedOption;
+      } else {
+        session.callback_time = userMessage;
+      }
       
       // Check if user already has details stored
       if (session.td_name && session.td_phone) {
@@ -154,13 +240,49 @@ Thank you! 😊`,
       return { message: "Great! Please provide your name:" };
 
     case 'callback_name':
-      session.callback_name = userMessage;
-      session.step = 'contact_callback_phone';
+      // Check for unrelated topics first
+      const nameTopicCheck = await checkUnrelatedTopic(userMessage, 'contact_us');
+      if (nameTopicCheck.isUnrelated && nameTopicCheck.confidence > 0.7) {
+        return {
+          message: nameTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Validate name input
+      const nameValidation = await validateStepInput(userMessage, 'name', { context: 'callback_name' });
+      if (nameValidation.isValid && nameValidation.confidence > 0.7) {
+        session.callback_name = userMessage;
+        session.step = 'contact_callback_phone';
+      } else {
+        return {
+          message: "Please provide your name",
+          options: []
+        };
+      }
       return { message: "Please provide your phone number:" };
 
     case 'contact_callback_phone':
-      session.callback_phone = userMessage;
-      session.step = 'done';
+      // Check for unrelated topics first
+      const phoneTopicCheck = await checkUnrelatedTopic(userMessage, 'contact_us');
+      if (phoneTopicCheck.isUnrelated && phoneTopicCheck.confidence > 0.7) {
+        return {
+          message: phoneTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Validate phone input
+      const phoneValidation = await validateStepInput(userMessage, 'phone', { context: 'callback_phone' });
+      if (phoneValidation.isValid && phoneValidation.confidence > 0.7) {
+        session.callback_phone = userMessage;
+        session.step = 'done';
+      } else {
+        return {
+          message: "Please provide a valid phone number",
+          options: []
+        };
+      }
 
       try {
         // Save callback request to database
@@ -220,6 +342,15 @@ Thank you! 😊`,
       }
 
     case 'callback_reason':
+      // Check for unrelated topics first
+      const reasonTopicCheck = await checkUnrelatedTopic(userMessage, 'contact_us');
+      if (reasonTopicCheck.isUnrelated && reasonTopicCheck.confidence > 0.7) {
+        return {
+          message: reasonTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       session.callback_reason = userMessage;
       session.step = 'done';
 
@@ -281,6 +412,15 @@ Thank you! 😊`,
       }
 
     case 'done':
+      // Check for unrelated topics first
+      const doneTopicCheck = await checkUnrelatedTopic(userMessage, 'contact_us');
+      if (doneTopicCheck.isUnrelated && doneTopicCheck.confidence > 0.7) {
+        return {
+          message: doneTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
       if (userMessage === "Explore") {
         // Save user profile before clearing session data
         try {
