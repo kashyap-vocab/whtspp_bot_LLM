@@ -6,7 +6,7 @@ const { getMainMenu } = require('./conversationFlow');
 const { parseUserIntent } = require('./geminiHandler');
 const { saveUserProfile, extractUserPreferences } = require('./userProfileManager');
 
-async function mainRouter(session, message, pool) {
+async function mainRouter(session, message, pool, phone) {
   const lowerMsg = message.toLowerCase();
   console.log("🧭 Incoming message:", message);
   console.log("🧠 Current session step:", session.step);
@@ -15,88 +15,257 @@ async function mainRouter(session, message, pool) {
   console.log("🔍 Session keys:", Object.keys(session));
   console.log("⚙️ Reached global AI hook entry");
 
+  // Check if message is a predefined option/button - skip LLM for these
+  const isPredefinedOption = [
+    '🚗 Browse Used Cars', '💰 Get Car Valuation', '📞 Contact Our Team', 'ℹ️ About Us',
+    'Under ₹5 Lakhs', '₹5-10 Lakhs', '₹10-15 Lakhs', '₹15-20 Lakhs', 'Above ₹20 Lakhs',
+    'Hatchback', 'Sedan', 'SUV', 'MUV', 'Luxury', 'Show me all types',
+    'Maruti Suzuki', 'Hyundai', 'Tata', 'Mahindra', 'Kia', 'All brand',
+    'Book Test Drive', 'See more cars', 'Change criteria',
+    'Today', 'Tomorrow', 'Later this Week', 'Next Week',
+    'Morning (10-12 PM)', 'Afternoon (12-4 PM)', 'Evening (4-7 PM)',
+    'Yes', 'No', 'Confirm', 'Reject',
+    'Pick up from our showroom', 'We bring the car to your location',
+    '🌅 Morning (9-12 PM)', '🌞 Afternoon (12-4 PM)', '🌆 Evening (4-8 PM)',
+    '📞 Call us now', '📞 Request a callback', '📍 Visit our showroom',
+    '🤖 Help me navigate', '🔄 Start over', '📞 Talk to human', 'ℹ️ What can you do?'
+  ].includes(message);
+
+  // Check if message is a simple greeting - skip LLM for these
+  const isSimpleGreeting = ['hi', 'hello', 'hey', 'hy'].includes(lowerMsg);
+
+  // Check if this is a new car search query (should start fresh browse flow) - PRIORITY CHECK
+  const isNewCarSearch = (() => {
+    const lowerMsg = message.toLowerCase();
+    
+    // First check if it's a valuation intent - if so, it's NOT a car search
+    const valuationKeywords = [
+      'want to sell', 'selling', 'sell my', 'get valuation', 'car valuation',
+      'my car is', 'i have a', 'i own a', 'my vehicle is'
+    ];
+    const isValuationIntent = valuationKeywords.some(keyword => lowerMsg.includes(keyword));
+    
+    if (isValuationIntent) {
+      return false; // This is valuation, not browse
+    }
+    
+    const carSearchKeywords = [
+      'want to buy', 'looking for', 'need a car', 'show me', 'find me', 'search for',
+      'buy', 'purchase', 'looking', 'need', 'want', 'show', 'find', 'search'
+    ];
+    const carBrands = [
+      'kia', 'hyundai', 'maruti', 'tata', 'mahindra', 'honda', 'toyota', 'volkswagen', 'vw',
+      'bmw', 'audi', 'mercedes', 'skoda', 'renault', 'ford', 'chevrolet', 'nissan'
+    ];
+    const budgetKeywords = [
+      'lakhs', 'lakh', 'lacs', 'lkhsa', 'under', 'above', 'upto', 'maximum', 'budget', 'price'
+    ];
+    
+    const hasCarSearchKeyword = carSearchKeywords.some(keyword => lowerMsg.includes(keyword));
+    const hasCarBrand = carBrands.some(brand => lowerMsg.includes(brand));
+    const hasBudgetKeyword = budgetKeywords.some(keyword => lowerMsg.includes(keyword));
+    
+    return hasCarSearchKeyword && (hasCarBrand || hasBudgetKeyword);
+  })();
+
+  // Check if user is already in a specific flow - if so, stay in that flow
+  const isInValuationFlow = session.step && (
+    session.step.startsWith('valuation_') || 
+    ['brand', 'model', 'year', 'fuel', 'kms', 'owner', 'condition', 'name', 'phone', 'location'].includes(session.step)
+  );
+  
+  const isInBrowseFlow = session.step && (
+    session.step.startsWith('browse_') || 
+    session.step.startsWith('test_drive_') ||
+    session.step.startsWith('td_') ||
+    ['show_more_cars', 'show_cars', 'car_selected_options', 'booking_complete'].includes(session.step)
+  );
+  
+  const isInContactFlow = session.step && (
+    session.step.startsWith('contact_') ||
+    ['callback_time', 'contact_name', 'contact_phone', 'contact_query'].includes(session.step)
+  );
+
+  // If already in a flow, stay in that flow and let AI parsing handle it
+  if (isInValuationFlow) {
+    console.log('💰 Already in valuation flow, staying in valuation flow');
+    return handleCarValuationStep(session, message, pool);
+  }
+  
+  if (isInBrowseFlow) {
+    console.log('🚗 Already in browse flow, staying in browse flow');
+    return handleBrowseUsedCars(pool, session, message, phone);
+  }
+  
+  if (isInContactFlow) {
+    console.log('📞 Already in contact flow, staying in contact flow');
+    return handleContactUsStep(session, message, pool);
+  }
+
+  // Only start new flows if not already in any flow
+  // If it's a new car search query, start fresh browse flow - HIGHEST PRIORITY
+  if (isNewCarSearch) {
+    console.log('🚗 New car search detected, starting fresh browse flow');
+    // Clear session data for fresh start
+    Object.keys(session).forEach(key => delete session[key]);
+    session.step = 'browse_start';
+    return handleBrowseUsedCars(pool, session, message, phone);
+  }
+
+  // Check if this is a valuation intent - start valuation flow
+  const isValuationIntent = (() => {
+    const lowerMsg = message.toLowerCase();
+    const valuationKeywords = [
+      'want to sell', 'selling', 'sell my', 'get valuation', 'car valuation',
+      'my car is', 'i have a', 'i own a', 'my vehicle is'
+    ];
+    return valuationKeywords.some(keyword => lowerMsg.includes(keyword));
+  })();
+
+  if (isValuationIntent) {
+    console.log('💰 Valuation intent detected, starting valuation flow');
+    // Clear session data for fresh start
+    Object.keys(session).forEach(key => delete session[key]);
+    session.step = 'valuation_start';
+    return handleCarValuationStep(session, message, pool);
+  }
+
   // EARLY Global AI proposal (highest priority) before any resets
+  // Skip LLM if it's a predefined option or simple greeting
+  if (!isPredefinedOption && !isSimpleGreeting) {
   try {
     const thresholdEarly = parseFloat(process.env.AI_PROPOSAL_CONFIDENCE || '0.5');
     const hasKeyEarly = !!process.env.GEMINI_API_KEY;
-    console.log('🤖 AI early probe:', { step: session.step, threshold: thresholdEarly, hasKey: hasKeyEarly, userMessage: message });
-    
-    // Skip AI proposal if we're already in a structured flow (valuation, browse, contact, about)
-    const isInStructuredFlow = session.step && (
-      session.step.startsWith('valuation') || 
-      session.step.startsWith('browse') || 
-      session.step.startsWith('contact') || 
-      session.step.startsWith('about') ||
-      ['brand', 'model', 'year', 'fuel', 'kms', 'owner', 'condition', 'name', 'phone', 'location', 'other_brand_input', 'other_model_input'].includes(session.step) ||
-      ['browse_budget', 'browse_type', 'browse_brand', 'show_cars', 'car_selected_options', 'test_drive_date', 'test_drive_time', 'td_name', 'td_phone', 'td_license', 'td_location_mode'].includes(session.step) ||
-      ['contact_menu', 'callback_time', 'callback_name', 'contact_callback_phone', 'callback_reason'].includes(session.step) ||
-      ['about_menu', 'about_selection'].includes(session.step)
-    );
-    
-    if (isInStructuredFlow) {
-      console.log('🤖 Skipping AI proposal - already in structured flow:', session.step);
-    } else {
-      const aiEarly = await parseUserIntent(pool, message);
-      console.log('🤖 AI early result:', aiEarly);
-      if (aiEarly && typeof aiEarly.confidence === 'number') {
-        const e = aiEarly.entities || {};
-        const isBrowseEarly = aiEarly.intent === 'browse' && (e.brand || e.type || e.budget);
-        const isValEarly = aiEarly.intent === 'valuation' && (e.brand || e.model || e.year || e.fuel);
-        const isContactEarly = aiEarly.intent === 'contact';
-        if (aiEarly.confidence >= thresholdEarly && (isBrowseEarly || isValEarly || isContactEarly)) {
-        // Auto-apply AI suggestions immediately without confirmation
-        console.log('🤖 AI auto-applying:', { flow: aiEarly.intent || 'browse', entities: e });
-        if (isBrowseEarly) {
-          // Smart flow skipping - apply all available entities
-          if (e.budget) session.budget = e.budget;
-          if (e.type) session.type = e.type === 'all Type' ? 'all' : e.type;
-          if (e.brand) session.brand = e.brand === 'all Brand' ? 'all' : e.brand;
-          
-          // Determine the next step based on what's missing
-          let nextStep = 'browse_start';
-          if (!session.budget) {
-            nextStep = 'browse_budget';
-          } else if (!session.type) {
-            nextStep = 'browse_type';
-          } else if (!session.brand) {
-            nextStep = 'browse_brand';
-          } else {
-            nextStep = 'show_cars';
-          }
-          
-          session.step = nextStep;
-          console.log('🤖 AI smart flow skipping:', { 
-            budget: session.budget, 
-            type: session.type, 
-            brand: session.brand, 
-            nextStep: nextStep 
-          });
-          return handleBrowseUsedCars(session, message, pool);
+      console.log('🤖 AI early probe:', { step: session.step, threshold: thresholdEarly, hasKey: hasKeyEarly, userMessage: message });
+      
+      // Only allow AI parsing if user has already chosen a flow
+      const isInChosenFlow = session.step && 
+        (session.step.startsWith('browse_') || 
+         session.step.startsWith('test_drive_') ||
+         session.step.startsWith('td_') ||
+         session.step.startsWith('valuation_') ||
+         ['show_more_cars', 'show_cars', 'car_selected_options'].includes(session.step) ||
+         ['brand', 'model', 'year', 'fuel', 'kms', 'owner', 'condition'].includes(session.step) ||
+         ['callback_time', 'contact_name', 'contact_phone', 'contact_query'].includes(session.step));
+      
+      // If user hasn't chosen a flow yet, check for unrelated topics first
+      if (!session.step || session.step === 'start' || session.step === 'main_menu') {
+        console.log('🤖 No flow chosen yet - checking for unrelated topics');
+        
+        // Check for unrelated topics before showing main menu
+        const { checkUnrelatedTopic } = require('./llmUtils');
+        const unrelatedCheck = await checkUnrelatedTopic(message, 'general');
+        
+        if (unrelatedCheck.isUnrelated && unrelatedCheck.confidence > 0.7) {
+          console.log('✅ Unrelated topic detected in main menu');
+          return {
+            message: unrelatedCheck.redirectMessage,
+            options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+          };
         }
-        if (isValEarly) {
-          if (e.brand) session.brand = e.brand;
-          if (e.model) session.model = e.model;
-          if (e.year) session.year = e.year;
-          if (e.fuel) session.fuel = e.fuel;
-          if (!session.brand) session.step = 'brand';
-          else if (!session.model) session.step = 'model';
-          else if (!session.year) session.step = 'year';
-          else if (!session.fuel) session.step = 'fuel';
-          else session.step = 'kms';
-          console.log('🤖 AI auto-applied for valuation:', { brand: session.brand, model: session.model, year: session.year, fuel: session.fuel });
-          return handleCarValuationStep(session, message);
-        }
-        if (isContactEarly) {
-          session.step = 'callback_time';
-          console.log('🤖 AI auto-applied for contact callback');
-          return handleContactUsStep(session, message);
-        }
-      } else {
-        console.log('🤖 AI early not proposing:', { reason: aiEarly.confidence < thresholdEarly ? 'low_confidence' : 'no_entities_or_intent', confidence: aiEarly.confidence, intent: aiEarly.intent, entities: e });
+        
+        console.log('🤖 Showing main menu');
+        return getMainMenu();
       }
-    }
-    }
-  } catch (e) { console.log('AI early proposal skipped:', e.message); }
+      
+      // Allow AI parsing only within chosen flows
+      const allowAIParsing = isInChosenFlow;
+      
+      if (!allowAIParsing) {
+        console.log('🤖 Skipping AI proposal - not in AI-enabled step:', session.step);
+        
+        // Check for unrelated topics before showing main menu
+        const { checkUnrelatedTopic } = require('./llmUtils');
+        const unrelatedCheck = await checkUnrelatedTopic(message, 'general');
+        
+        if (unrelatedCheck.isUnrelated && unrelatedCheck.confidence > 0.7) {
+          console.log('✅ Unrelated topic detected in AI-disabled step');
+          return {
+            message: unrelatedCheck.redirectMessage,
+            options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+          };
+        }
+        
+        return getMainMenu();
+      } else {
+    const aiEarly = await parseUserIntent(pool, message);
+    console.log('🤖 AI early result:', aiEarly);
+    if (aiEarly && typeof aiEarly.confidence === 'number') {
+      const e = aiEarly.entities || {};
+      
+      // Context-aware entity extraction based on current flow
+      const isValuationStep = ['brand', 'model', 'year', 'fuel', 'kms', 'owner', 'condition'].includes(session.step);
+      const isBrowseStep = session.step && session.step.startsWith('browse_');
+      const isContactStep = ['callback_time', 'contact_name', 'contact_phone', 'contact_query'].includes(session.step);
+      
+      // For valuation flow: extract entities regardless of AI intent classification
+      if (isValuationStep && (e.brand || e.model || e.year || e.fuel)) {
+        console.log('🤖 Context-aware: In valuation flow, extracting entities');
+        if (e.brand) session.brand = e.brand;
+        if (e.model) session.model = e.model;
+        if (e.year) session.year = e.year;
+        if (e.fuel) session.fuel = e.fuel;
+        
+        // Smart flow skipping for valuation
+        if (!session.brand) session.step = 'brand';
+        else if (!session.model) session.step = 'model';
+        else if (!session.year) session.step = 'year';
+        else if (!session.fuel) session.step = 'fuel';
+        else session.step = 'kms';
+        
+        console.log('🤖 AI auto-applied for valuation:', { brand: session.brand, model: session.model, year: session.year, fuel: session.fuel });
+        console.log('🤖 Next step:', session.step);
+        
+        // Call handleCarValuationStep with the AI-extracted data
+        return handleCarValuationStep(session, message);
+      }
+      
+      // For browse flow: only extract if AI classifies as browse
+      const isBrowseEarly = aiEarly.intent === 'browse' && (e.brand || e.type || e.budget);
+      if (isBrowseStep && isBrowseEarly && aiEarly.confidence >= thresholdEarly) {
+          // Auto-apply AI suggestions immediately without confirmation
+          console.log('🤖 AI auto-applying:', { flow: aiEarly.intent || 'browse', entities: e });
+          if (isBrowseEarly) {
+            // Smart flow skipping - apply all available entities
+        if (e.budget) session.budget = e.budget;
+        if (e.type) session.type = e.type === 'all Type' ? 'all' : e.type;
+        if (e.brand) session.brand = e.brand === 'all Brand' ? 'all' : e.brand;
+            
+            // Determine the next step based on what's missing
+            let nextStep = 'browse_start';
+            if (!session.budget) {
+              nextStep = 'browse_budget';
+            } else if (!session.type) {
+              nextStep = 'browse_type';
+            } else if (!session.brand) {
+              nextStep = 'browse_brand';
+            } else {
+              nextStep = 'show_more_cars';
+            }
+            
+            session.step = nextStep;
+            console.log('🤖 AI smart flow skipping:', { 
+              budget: session.budget, 
+              type: session.type, 
+              brand: session.brand, 
+              nextStep: nextStep 
+            });
+            return handleBrowseUsedCars(pool, session, message, phone);
+          }
+          if (isContactEarly) {
+        session.step = 'callback_time';
+            console.log('🤖 AI auto-applied for contact callback');
+            return handleContactUsStep(session, message);
+          }
+        } else {
+          console.log('🤖 AI early not proposing:', { reason: aiEarly.confidence < thresholdEarly ? 'low_confidence' : 'no_entities_or_intent', confidence: aiEarly.confidence, intent: aiEarly.intent, entities: e });
+        }
+      }
+      }
+    } catch (e) { console.log('AI early proposal skipped:', e.message); }
+  } else {
+    console.log('🤖 Skipping LLM - predefined option or simple greeting:', { isPredefinedOption, isSimpleGreeting, message });
+  }
 
   // Handle "Start over" globally - MUST be before routing
   if (message === '🔄 Start over' || lowerMsg.includes('start over') || lowerMsg.includes('restart')) {
@@ -189,8 +358,14 @@ if (session.conversationEnded && (lowerMsg.includes('start') || lowerMsg.include
     return null; // Return null to indicate no message should be sent
   }
 
+
   // Check for unrelated questions or confusion that needs human assistance
   const needsAssistance = (() => {
+    // Skip human assistance for predefined options
+    if (isPredefinedOption) {
+      return false;
+    }
+    
     const lowerMsg = message.toLowerCase();
     const confusionKeywords = [
       'what', 'how', 'why', 'when', 'where', 'help', 'confused', 'lost', 'stuck',
@@ -199,7 +374,9 @@ if (session.conversationEnded && (lowerMsg.includes('start') || lowerMsg.include
     ];
     const offTopicKeywords = [
       'weather', 'food', 'movie', 'music', 'sports', 'news', 'politics', 'travel',
-      'hotel', 'restaurant', 'shopping', 'clothes', 'health', 'education', 'job'
+      'hotel', 'restaurant', 'shopping', 'clothes', 'health', 'education', 'job',
+      'eat', 'joke', 'pizza', 'football', 'love', 'hate', 'kill', 'die', 'hurt',
+      'pain', 'sick', 'school', 'work', 'money', 'family', 'friend'
     ];
     
     // Skip human assistance for test drive flow steps
@@ -276,7 +453,7 @@ if (session.conversationEnded && (lowerMsg.includes('start') || lowerMsg.include
     // Check if user came from browse flow
     if (session.selectedCar || session.filteredCars || session.budget) {
       console.log("➡️ Routing to: Browse Used Cars (done step from browse flow)");
-      return handleBrowseUsedCars(session, message, pool);
+      return handleBrowseUsedCars(pool, session, message, phone);
     }
     console.log("⚠️ DEBUG: No flow context found for 'done' step, falling through to main menu");
   }
@@ -287,72 +464,93 @@ if (session.conversationEnded && (lowerMsg.includes('start') || lowerMsg.include
     return handleAboutUsStep(session, message);
   }
 
-  if (session.step && (session.step.startsWith('browse') || session.step === 'show_more_cars' || session.step === 'show_more_cars_after_images' || session.step === 'car_selected_options' || session.step.startsWith('test_drive') || session.step.startsWith('td_') || session.step === 'change_criteria_confirm' || session.step === 'modify_choices' || session.step === 'human_assistance')) {
+  if (session.step && (session.step.startsWith('browse') || session.step === 'show_more_cars' || session.step === 'show_cars' || session.step === 'show_more_cars_after_images' || session.step === 'car_selected_options' || session.step.startsWith('test_drive') || session.step.startsWith('td_') || session.step === 'change_criteria_confirm' || session.step === 'modify_choices' || session.step === 'human_assistance')) {
     console.log("➡️ Routing to: Browse Used Cars (step: " + session.step + ")");
-    return handleBrowseUsedCars(session, message, pool);
+    return handleBrowseUsedCars(pool, session, message, phone);
   }
 
-  // Keyword-based routing fallback
-  if (lowerMsg.includes('valuation') || message === "💰 Get Car Valuation") {
+  // Keyword-based routing fallback - only when no flow is chosen
+  if ((!session.step || session.step === 'start' || session.step === 'main_menu') && 
+      (lowerMsg.includes('valuation') || message === "💰 Get Car Valuation")) {
     session.step = 'valuation_start';
     console.log("💬 Keyword matched: valuation → Routing to Car Valuation");
     return handleCarValuationStep(session, message);
   }
 
-  if (lowerMsg.includes('contact') || message === "📞 Contact Our Team") {
+  if ((!session.step || session.step === 'start' || session.step === 'main_menu') && 
+      (lowerMsg.includes('contact') || message === "📞 Contact Our Team")) {
     session.step = 'contact_start';
     console.log("💬 Keyword matched: contact → Routing to Contact Us");
     return handleContactUsStep(session, message);
   }
 
-  if (lowerMsg.includes('about') || message === "ℹ️ About Us") {
+  if ((!session.step || session.step === 'start' || session.step === 'main_menu') && 
+      (lowerMsg.includes('about') || message === "ℹ️ About Us")) {
     session.step = 'about_start';
     console.log("💬 Keyword matched: about → Routing to About Us");
     return handleAboutUsStep(session, message);
   }
 
-  if (lowerMsg.includes('browse') || message === "🚗 Browse Used Cars") {
+  if ((!session.step || session.step === 'start' || session.step === 'main_menu') && 
+      (lowerMsg.includes('browse') || message === "🚗 Browse Used Cars")) {
     session.step = 'browse_start';
     console.log("💬 Keyword matched: browse → Routing to Browse Cars");
     console.log("🔍 Session step set to:", session.step);
-    return handleBrowseUsedCars(session, message, pool);
+    return handleBrowseUsedCars(pool, session, message, phone);
   }
 
   // AI-powered intent classification fallback for unclear messages
-  try {
-    const ai = await parseUserIntent(pool, message);
-    console.log("🤖 AI fallback classification:", ai);
-    
-    if (ai && ai.confidence > 0.3) {
-      if (ai.intent === 'valuation') {
-        session.step = 'valuation_start';
-        console.log("🤖 AI classified as valuation → Routing to Car Valuation");
-        return handleCarValuationStep(session, message);
-      } else if (ai.intent === 'browse') {
-        session.step = 'browse_start';
-        console.log("🤖 AI classified as browse → Routing to Browse Cars");
-        return handleBrowseUsedCars(session, message, pool);
-      } else if (ai.intent === 'contact') {
-        session.step = 'contact_start';
-        console.log("🤖 AI classified as contact → Routing to Contact Us");
-        return handleContactUsStep(session, message);
-      } else if (ai.intent === 'about') {
-        session.step = 'about_start';
-        console.log("🤖 AI classified as about → Routing to About Us");
-        return handleAboutUsStep(session, message);
+  // Skip LLM if it's a predefined option or simple greeting
+  if (!isPredefinedOption && !isSimpleGreeting) {
+    try {
+      const ai = await parseUserIntent(pool, message);
+      console.log("🤖 AI fallback classification:", ai);
+      
+      if (ai && ai.confidence > 0.3) {
+        if (ai.intent === 'valuation') {
+          session.step = 'valuation_start';
+          console.log("🤖 AI classified as valuation → Routing to Car Valuation");
+          return handleCarValuationStep(session, message);
+        } else if (ai.intent === 'browse') {
+          session.step = 'browse_start';
+          console.log("🤖 AI classified as browse → Routing to Browse Cars");
+          return handleBrowseUsedCars(pool, session, message, phone);
+        } else if (ai.intent === 'contact') {
+          session.step = 'contact_start';
+          console.log("🤖 AI classified as contact → Routing to Contact Us");
+          return handleContactUsStep(session, message);
+        } else if (ai.intent === 'about') {
+          session.step = 'about_start';
+          console.log("🤖 AI classified as about → Routing to About Us");
+          return handleAboutUsStep(session, message);
+        }
       }
+    } catch (e) {
+      console.log("🤖 AI fallback failed:", e.message);
     }
-  } catch (e) {
-    console.log("🤖 AI fallback failed:", e.message);
+  } else {
+    console.log("🤖 Skipping AI fallback - predefined option or simple greeting");
   }
 
-  // If AI couldn't classify or confidence too low, ask user to clarify
+  // If AI couldn't classify or confidence too low, check for unrelated topics first
   if (!session.step || session.step === 'main_menu') {
+    console.log("❓ Intent unclear, checking for unrelated topics");
+    
+    // Check for unrelated topics before asking user to clarify
+    const { checkUnrelatedTopic } = require('./llmUtils');
+    const unrelatedCheck = await checkUnrelatedTopic(message, 'general');
+    
+    if (unrelatedCheck.isUnrelated && unrelatedCheck.confidence > 0.7) {
+      console.log('✅ Unrelated topic detected in unclear intent');
+      return {
+        message: unrelatedCheck.redirectMessage,
+        options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+      };
+    }
+    
     console.log("❓ Intent unclear, asking user to choose flow");
     return {
-      message: `I apologize, but I'm not sure what you'd like to do. 😅 
-
-Could you please choose one of these options so I can help you better?`,
+      message: "Hello! 👋 Welcome to \"Sherpa Hyundai\". I'm here to help you find your perfect used car. How can I assist you today?",
       options: [
         "🚗 Browse Used Cars",
         "💰 Get Car Valuation", 
@@ -362,10 +560,10 @@ Could you please choose one of these options so I can help you better?`,
     };
   }
 
-  // Greet and start main menu if first message
-  if (!session.step || ['hi', 'hello', 'hey','hy'].includes(lowerMsg)) {
+  // Handle greetings - automatically start welcome flow
+  if (['hi', 'hello', 'hey', 'hy'].includes(lowerMsg)) {
     session.step = 'main_menu';
-    console.log("🔁 Resetting to main menu");
+    console.log("👋 Greeting detected, starting welcome flow");
     
     // Check if user already has details stored
     if (session.td_name && session.td_phone) {
@@ -381,6 +579,22 @@ Could you please choose one of these options so I can help you better?`,
       };
     }
     
+    // Start with welcome message for new users
+    return {
+      message: "Hello! 👋 Welcome to \"Sherpa Hyundai\". I'm here to help you find your perfect used car. How can I assist you today?",
+      options: [
+        "🚗 Browse Used Cars",
+        "💰 Get Car Valuation",
+        "📞 Contact Our Team",
+        "ℹ️ About Us"
+      ]
+    };
+  }
+
+  // Handle first message or no step
+  if (!session.step) {
+    session.step = 'main_menu';
+    console.log("🔁 First message, setting main menu");
     return getMainMenu(session);
   }
 
@@ -400,7 +614,7 @@ Could you please choose one of these options so I can help you better?`,
       console.log("🔄 User wants to start fresh after completing flow");
       // Clear all session data for fresh start
       Object.keys(session).forEach(key => delete session[key]);
-      session.step = 'main_menu';
+    session.step = 'main_menu';
       return getMainMenu(session);
     }
   }
@@ -413,7 +627,7 @@ Could you please choose one of these options so I can help you better?`,
       console.log("👤 Detected potential name input:", message);
       session.td_name = message.trim();
       return {
-        message: `Hello ${message.trim()}! 👋 Welcome to Sherpa Hyundai. I'm here to help you find your perfect used car. How can I assist you today?`,
+        message: `Hello ${message.trim()}! 👋 Welcome to \"Sherpa Hyundai\". I'm here to help you find your perfect used car. How can I assist you today?`,
         options: [
           "🚗 Browse Used Cars",
           "💰 Get Car Valuation",
@@ -424,7 +638,21 @@ Could you please choose one of these options so I can help you better?`,
     }
   }
 
-  // Handle unknown messages by showing main menu
+  // Handle unknown messages by checking for unrelated topics first
+  console.log("⚠️ Unknown message, checking for unrelated topics");
+  
+        // Check for unrelated topics before asking user to clarify
+        const { checkUnrelatedTopic } = require('./llmUtils');
+        const unrelatedCheck = await checkUnrelatedTopic(message, 'general');
+  
+  if (unrelatedCheck.isUnrelated && unrelatedCheck.confidence > 0.7) {
+    console.log('✅ Unrelated topic detected in unknown message');
+    return {
+      message: unrelatedCheck.redirectMessage,
+      options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+    };
+  }
+  
   console.log("⚠️ Unknown message, showing main menu");
   return getMainMenu(session);
 }

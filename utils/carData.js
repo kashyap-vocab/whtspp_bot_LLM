@@ -138,7 +138,7 @@ async function getAvailableTypes(pool, budget) {
       console.log('📝 No types found in database, inferring from model names...');
       const fallbackQuery = 'SELECT DISTINCT model, variant FROM cars WHERE 1=1';
       const fallbackRes = await retryQuery(pool, async () => {
-        return await pool.query(fallbackQuery, params);
+        return await pool.query(fallbackQuery);
       });
       
       const typeMap = new Map();
@@ -185,8 +185,13 @@ async function getAvailableBrands(pool, budget, type) {
     let params = [];
     let paramCount = 0;
     
-    // Filter by type (infer from model/variant names)
+    // Filter by type (use actual type column first, then fallback to model inference)
     if (type && type !== 'Any' && type !== 'all') {
+      // First try to use the actual type column
+      query += ` AND (type = $${++paramCount}`;
+      params.push(type);
+      
+      // Add fallback conditions for model name inference
       let typeConditions = [];
       
       if (type === 'Hatchback') {
@@ -200,8 +205,10 @@ async function getAvailableBrands(pool, budget, type) {
       }
       
       if (typeConditions.length > 0) {
-        query += ` AND (${typeConditions.join(' OR ')})`;
+        query += ` OR (type IS NULL AND (${typeConditions.join(' OR ')}))`;
       }
+      
+      query += ')';
     }
     
     // Filter by budget range

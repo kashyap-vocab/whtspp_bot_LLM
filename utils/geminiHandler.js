@@ -1,7 +1,11 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getAvailableBrands, getModelsByBrand, getAvailableTypes } = require('./carData');
+const geminiWrapper = require('./geminiWrapper');
 
-// Initialize Gemini API
+require('dotenv').config();
+console.log("Gemini key:", process.env.GEMINI_API_KEY);
+
+// Initialize Gemini API (fallback)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Context for the AI to understand the car dealership bot's purpose
@@ -40,36 +44,41 @@ async function handleOutOfContextQuestion(userMessage, retryCount = 0) {
     }
 
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       generationConfig: {
         maxOutputTokens: 200,
         temperature: 0.7,
+        topP: 0.8,
+        topK: 40
       }
     });
 
-    const prompt = `${SYSTEM_CONTEXT}
+    const systemPrompt = `You are a helpful car dealership assistant for Sherpa Hyundai. Your role is to provide intelligent, friendly responses to customer messages.
 
-User message: "${userMessage}"
+SYSTEM INSTRUCTIONS:
+1. Analyze if the user's message is car-related or off-topic
+2. Provide appropriate responses based on the context
+3. Always maintain a friendly, professional tone
+4. Guide users to relevant car services when appropriate
+5. Keep responses concise and helpful (under 200 words)
 
-Please provide a helpful, intelligent response that:
-1. Acknowledges their message appropriately
-2. If car-related: Provide helpful information and guide to relevant services
-3. If off-topic: Politely redirect to car services while being understanding
-4. If unclear: Ask clarifying questions and suggest relevant options
-5. Always be friendly, professional, and conversational
-6. Keep response under 200 words
-7. End with suggesting relevant menu options
+RESPONSE GUIDELINES:
+- For car-related questions: Provide helpful information and guide to relevant services
+- For off-topic questions: Politely acknowledge and redirect to car services while being understanding
+- For unclear messages: Ask clarifying questions and suggest relevant options
+- Always end with suggesting relevant menu options
 
-Response:`;
+AVAILABLE SERVICES:
+- 🚗 Browse Used Cars: View our inventory of pre-owned vehicles
+- 💰 Get Car Valuation: Get a free estimate for your current car
+- 📞 Contact Our Team: Speak with our sales representatives
+- ℹ️ About Us: Learn about Sherpa Hyundai`;
 
-    // Add timeout to prevent hanging
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Gemini API timeout')), timeoutMs);
-    });
+    const userPrompt = `User message: "${userMessage}"
 
-    const apiPromise = model.generateContent(prompt);
-    
-    const result = await Promise.race([apiPromise, timeoutPromise]);
+Provide a helpful response:`;
+
+    const result = await model.generateContent([systemPrompt, userPrompt]);
     const response = await result.response;
     const text = response.text();
     
@@ -110,27 +119,7 @@ Response:`;
 }
 
 function getFallbackResponse(userMessage) {
-  const lowerMsg = userMessage.toLowerCase();
-  
-  // Check for common off-topic keywords
-  const offTopicKeywords = [
-    'cook', 'recipe', 'food', 'biryani', 'weather', 'sports', 'movie', 'music',
-    'joke', 'funny', 'game', 'politics', 'news', 'travel', 'hotel', 'restaurant'
-  ];
-  
-  const isOffTopic = offTopicKeywords.some(keyword => lowerMsg.includes(keyword));
-  const carKeywords = [
-    'car', 'vehicle', 'auto', 'motor', 'drive', 'buy', 'sell', 'price', 'cost',
-    'valuation', 'value', 'browse', 'inventory', 'model', 'brand', 'year', 'fuel',
-    'diesel', 'petrol', 'hybrid', 'electric', 'km', 'mileage', 'condition', 'owner',
-    'contact', 'call', 'phone', 'team', 'sales', 'about', 'info', 'help', 'assist',
-    'honda', 'hyundai', 'toyota', 'maruti', 'tata', 'kia', 'mahindra', 'skoda',
-    'renault', 'ford', 'chevrolet', 'volkswagen', 'bmw', 'audi', 'mercedes',
-    '₹', 'lakhs', 'lakh', 'crore', 'crores', 'budget', 'under', 'above', 'range'
-  ];
-  const iscarTopic = carKeywords.some(keyword => lowerMsg.includes(keyword));
-  
-  if (iscarTopic) {
+  // Simple fallback without keyword analysis - let LLM handle everything
     return `I'm here to help you with car-related services at Sherpa Hyundai! 🚗
 
 How can I assist you today?
@@ -138,91 +127,68 @@ How can I assist you today?
 💰 Get Car Valuation
 📞 Contact Our Team
 ℹ️ About Us`;
-    
-  }
-  return `I understand you're asking about "${userMessage}", but I'm specifically here to help you with car-related services at Sherpa Hyundai! 🚗
-
-I can assist you with:
-🚗 Browse our used car inventory
-💰 Get a free car valuation
-📞 Contact our sales team
-ℹ️ Learn more about us
-
-What would you like to explore today?`;
-  // For unclear messages, provide a general redirect
-  
 }
 
-// Function to detect if a message is out of context
-function isOutOfContext(message) {
-  const lowerMsg = message.toLowerCase();
-  
-  // Car-related keywords that should NOT trigger out-of-context handling
-  const carKeywords = [
-    'car', 'vehicle', 'auto', 'motor', 'drive', 'buy', 'sell', 'price', 'cost',
-    'valuation', 'value', 'browse', 'inventory', 'model', 'brand', 'year', 'fuel',
-    'diesel', 'petrol', 'hybrid', 'electric', 'km', 'mileage', 'condition', 'owner',
-    'contact', 'call', 'phone', 'team', 'sales', 'about', 'info', 'help', 'assist',
-    'honda', 'hyundai', 'toyota', 'maruti', 'tata', 'kia', 'mahindra', 'skoda',
-    'renault', 'ford', 'chevrolet', 'volkswagen', 'bmw', 'audi', 'mercedes',
-    '₹', 'lakhs', 'lakh', 'crore', 'crores', 'budget', 'under', 'above', 'range'
-  ];
-  
-  // Off-topic keywords that should trigger out-of-context handling
-  const offTopicKeywords = [
-    'cook', 'recipe', 'food', 'biryani', 'rice', 'chicken', 'vegetable', 'spice',
-    'weather', 'temperature', 'rain', 'sunny', 'cold', 'hot',
-    'sports', 'cricket', 'football', 'basketball', 'tennis',
-    'movie', 'film', 'cinema', 'actor', 'actress', 'director',
-    'music', 'song', 'singer', 'album', 'concert',
-    'joke', 'funny', 'humor', 'comedy',
-    'game', 'play', 'gaming', 'video game',
-    'politics', 'election', 'vote', 'government',
-    'news', 'current events', 'headlines',
-    'travel', 'vacation', 'trip', 'hotel', 'flight', 'booking',
-    'restaurant', 'dining', 'cafe', 'food delivery',
-    'shopping', 'clothes', 'fashion', 'shoes',
-    'health', 'medical', 'doctor', 'hospital',
-    'education', 'school', 'college', 'university', 'study',
-    'job', 'work', 'career', 'employment',
-    'love', 'relationship', 'dating', 'marriage',
-    'religion', 'god', 'prayer', 'temple', 'church',
-    'philosophy', 'meaning', 'purpose', 'life'
-  ];
-  
-  // Check if message contains car-related keywords
-  const hasCarKeywords = carKeywords.some(keyword => lowerMsg.includes(keyword));
-  
-  // Check if message contains off-topic keywords
-  const hasOffTopicKeywords = offTopicKeywords.some(keyword => lowerMsg.includes(keyword));
-  
-  // If it has off-topic keywords but no car keywords, it's likely out of context
-  if (hasOffTopicKeywords && !hasCarKeywords) {
-    return true;
-  }
-  
-  // If it's a very short message (1-2 words) and doesn't contain car keywords, it might be out of context
-  // BUT check if it's a valid budget option or other car-related selection first
-  if (message.trim().split(' ').length <= 2 && !hasCarKeywords) {
-    // Check if it's a budget option (contains ₹ symbol)
-    if (message.includes('₹')) {
-      return false; // This is a valid budget selection, not out of context
+// LLM-based function to detect if a message is out of context
+async function isOutOfContext(message) {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      // If no API key, assume all messages are in context to avoid blocking
+      return false;
     }
+
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ 
+      model: modelName, 
+      generationConfig: { 
+        temperature: 0.1, 
+        maxOutputTokens: 50,
+        topP: 0.8,
+        topK: 40
+      } 
+    });
+
+    const systemPrompt = `You are analyzing if a user message is related to car dealership services or off-topic.
+
+SYSTEM INSTRUCTIONS:
+1. Determine if the message is car-related or off-topic
+2. Return ONLY "true" or "false" - no explanations
+3. "true" = message is off-topic (not car-related)
+4. "false" = message is car-related or unclear
+
+CAR-RELATED TOPICS:
+- Buying/selling cars, valuations, browsing inventory
+- Car brands, models, specifications, prices
+- Contacting dealership, visiting showroom
+- About the company, services offered
+- Test drives, financing, insurance
+- Any automotive-related queries
+
+OFF-TOPIC EXAMPLES:
+- Cooking, recipes, food
+- Weather, sports, entertainment
+- Personal relationships, health
+- Politics, news, travel
+- Education, work, hobbies
+- Any non-automotive topics`;
+
+    const userPrompt = `Analyze this message: "${message}"
+
+Is this message off-topic? (true/false):`;
+
+    const result = await model.generateContent([systemPrompt, userPrompt]);
+    const text = (await result.response).text();
     
-    // Check if it's a common car-related selection
-    const commonSelections = [
-      'under', 'above', 'all', 'type', 'brand', 'model', 'yes', 'no', 'ok', 'okay',
-      'select', 'choose', 'next', 'previous', 'more', 'back', 'home', 'menu'
-    ];
+    // Parse the response
+    const response = text.trim().toLowerCase();
+    return response === 'true';
     
-    if (commonSelections.some(selection => lowerMsg.includes(selection))) {
-      return false; // This is a valid selection, not out of context
-    }
-    
-    return true;
-  }
-  
+  } catch (e) {
+    console.error('❌ isOutOfContext error:', e.message);
+    // If LLM fails, assume message is in context to avoid blocking
   return false;
+  }
 }
 
 module.exports = {
@@ -232,7 +198,7 @@ module.exports = {
   parseUserIntent
 };
 
-// New: LLM-powered intent/entity extraction with DB-backed normalization
+// LLM-powered intent/entity extraction using structured system prompts with load balancing
 async function parseUserIntent(pool, userMessage) {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -240,371 +206,271 @@ async function parseUserIntent(pool, userMessage) {
       return { intent: null, entities: {}, confidence: 0 };
     }
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { temperature: 0.2, maxOutputTokens: 256 } });
+    // Check if load balancer is available
+    if (!geminiWrapper.isAvailable()) {
+      console.log('🚫 API load balancer unavailable, using fallback');
+      return { intent: null, entities: {}, confidence: 0 };
+    }
 
-    // Keep buckets aligned with UI
-    const budgetBuckets = [
-      'Under ₹5 Lakhs',
-      '₹5-10 Lakhs',
-      '₹10-15 Lakhs',
-      '₹15-20 Lakhs',
-      'Above ₹20 Lakhs'
-    ];
+    const systemPrompt = `You are SHERPA, a friendly car dealership assistant at Sherpa Hyundai.
+- You help customers find perfect cars and get car valuations.
+- You understand typos and handle them smartly.
+- You always respond with valid JSON only.
+- You are empathetic and professional.
 
-    const prompt = `Extract user intent and entities for a used-car WhatsApp bot. 
-Return ONLY valid JSON with keys: intent (browse|valuation|contact|about|null), entities { brand, model, type, budget, year, fuel }, confidence (0-1).
+WHAT CUSTOMERS WANT:
+- Browse cars: "I want to buy", "show me cars", "looking for sedan"
+- Sell cars: "my car is", "I have a Honda", "get valuation"
+- Contact info: "call you", "phone number", "address"
+- About company: "who are you", "about sherpa"
 
-CRITICAL INTELLIGENCE RULES:
-- AUTOMATIC SPELLING CORRECTION: Fix typos intelligently (e.g., "Hondu" → "Honda", "Maruthi" → "Maruti", "seden" → "Sedan", "hatchbak" → "Hatchback")
-- MIXED LANGUAGE SUPPORT: Handle Hindi-English mix (e.g., "Mera car bechna hai" = valuation, "Car valuation chahiye" = valuation, "Kya aap help kar sakte hain" = contact)
-- NEGATIVE FEEDBACK HANDLING: Classify complaints/negative feedback as "contact" intent (e.g., "Your service is bad", "I don't like your cars", "This is useless")
-- MULTIPLE INTENT DETECTION: If user has multiple intents, choose the PRIMARY one and set confidence lower
-- GREETING HANDLING: Classify greetings as "contact" intent (e.g., "Good morning", "Hello", "Hi", "Hey" = contact, confidence: 0.8)
-- STRICT VALIDATION: Reject invalid data automatically:
-  * Years: Reject < 1990 or > 2024 (set year to null, lower confidence)
-  * Budgets: Reject < 1 lakh or > 50 lakhs (set budget to null, lower confidence)  
-  * Kilometers: Reject < 0 or > 500000 (set to null, lower confidence)
-- CONFIDENCE GUIDELINES:
-  * High confidence (> 0.8): Clear intent with valid data
-  * Medium confidence (0.5-0.8): Clear intent but some invalid data or multiple intents
-  * Low confidence (< 0.5): Unclear intent or mostly invalid data
+BUDGET BRACKETS (map user input to these exact texts):
+- "Under ₹5 Lakhs" (for 0-5 lakhs, "under 5", "5 lakh budget")
+- "₹5-10 Lakhs" (for 5-10 lakhs, "5 to 10", "around 7 lakhs")
+- "₹10-15 Lakhs" (for 10-15 lakhs, "10-15", "upto 12 lakhs")
+- "₹15-20 Lakhs" (for 15-20 lakhs, "15 to 20", "under 18 lakhs")
+- "Above ₹20 Lakhs" (for 20+ lakhs, "25 lakhs", "30-40 lakhs")
 
-Rules:
-- Map budget to one of: ${budgetBuckets.join(', ')} when possible.
-- Do not invent brands/models; if unsure leave null.
-- Prefer Indian automotive brands/models if mentioned.
-- Be conservative; low confidence if ambiguous.
-- For browse intent: Extract brand, model, type, budget from natural language
+CAR TYPES: Sedan, SUV, Hatchback, MUV, Convertible, Coupe
+CAR BRANDS: Maruti Suzuki, Hyundai, Tata, Mahindra, Honda, Toyota, etc.
 
-         Budget Interpretation Rules (Choose nearest budget bracket BELOW user's maximum):
-         Available buckets: Under ₹5 Lakhs (0-5L), ₹5-10 Lakhs (5-10L), ₹10-15 Lakhs (10-15L), ₹15-20 Lakhs (15-20L), Above ₹20 Lakhs (20L+)
-         
-         - "in 7 lakhs" = ₹5-10 Lakhs (user wants under 7L, nearest bracket below 7L is ₹5-10L)
-         - "in 10 lakhs" = ₹5-10 Lakhs (user wants under 10L, nearest bracket below 10L is ₹5-10L)
-         - "under 9 lakhs" = ₹5-10 Lakhs (user wants under 9L, nearest bracket below 9L is ₹5-10L)
-         - "around 8 lakhs" = ₹5-10 Lakhs (user wants around 8L, nearest bracket is ₹5-10L)
-         - "upto 12 lakhs" = ₹10-15 Lakhs (user wants up to 12L, nearest bracket below 12L is ₹10-15L)
-         - "maximum 15 lakhs" = ₹10-15 Lakhs (user wants up to 15L, nearest bracket below 15L is ₹10-15L)
-         - "budget is 5 lakhs" = Under ₹5 Lakhs (exact match)
-         - "can spend 20 lakhs" = Above ₹20 Lakhs (exact match)
-         - "less than 6 lakhs" = Under ₹5 Lakhs (user wants under 6L, nearest bracket below 6L is Under ₹5L)
-         - "more than 18 lakhs" = Above ₹20 Lakhs (user wants 18L+, nearest bracket above 18L is Above ₹20L)
-         - "within 4 lakhs" = Under ₹5 Lakhs (user wants under 4L, nearest bracket below 4L is Under ₹5L)
-         - "not more than 8 lakhs" = ₹5-10 Lakhs (user wants up to 8L, nearest bracket below 8L is ₹5-10L)
-         - "between 6-10 lakhs" = ₹5-10 Lakhs (user wants 6-10L, nearest bracket is ₹5-10L)
-         - "up to 7 lakhs" = ₹5-10 Lakhs (user wants up to 7L, nearest bracket below 7L is ₹5-10L)
-         - "max 11 lakhs" = ₹10-15 Lakhs (user wants up to 11L, nearest bracket below 11L is ₹10-15L)
-         - "till 14 lakhs" = ₹10-15 Lakhs (user wants up to 14L, nearest bracket below 14L is ₹10-15L)
+INTENT CLASSIFICATION:
+- "browse_used_cars": User wants to buy/look for used cars in browse flow
+- "valuation": User wants to sell/get valuation for their car (includes providing car details like "my car is honda", "I have a toyota", "my vehicle is...")
+- "contact": User wants to contact the dealership
+- "about": User wants information about the company
+- "null": Intent unclear or not car-related
 
-Car Type Recognition Patterns:
-- "hatch back" = "Hatchback"
-- "hatchback" = "Hatchback" 
-- "hatch" = "Hatchback"
-- "sedan" = "Sedan"
-- "suv" = "SUV"
-- "muv" = "MUV"
-- "luxury" = "Luxury"
-- "compact" = "Hatchback"
-- "small car" = "Hatchback"
-- "big car" = "SUV"
+CONTEXT AWARENESS:
+- If user is already in a flow (valuation/browse/contact), prioritize that flow's intent
+- In valuation flow: "City", "Swift", "i20" are model names, not browse intents
+- In browse flow: "City", "Swift", "i20" are car models for browsing
+- Always consider the current conversation context
 
-Intent Classification Rules (Use LLM intelligence, not rigid patterns):
+VALUATION INTENT EXAMPLES:
+- "my car is honda" → intent: "valuation", brand: "Honda"
+- "I have a toyota 2020" → intent: "valuation", brand: "Toyota", year: "2020"
+- "my vehicle is maruti swift" → intent: "valuation", brand: "Maruti", model: "Swift"
+- "I want to sell my car" → intent: "valuation"
+- "get valuation for my honda" → intent: "valuation", brand: "Honda"
 
-VALUATION INTENT - User wants to SELL their car:
-- Keywords: sell, valuation, price, worth, value, trade-in, exchange, dispose
-- Phrases: "I want to sell", "sell my car", "get valuation", "what's my car worth", "car price", "trade my car", "exchange my car", "dispose my car", "I have a car to sell", "want to sell my", "selling my", "car valuation", "how much is my car worth", "I want to sell a car", "sell a car", "want to sell", "selling a car"
-- Context: User mentions their own car details (brand, model, year, fuel) with selling intent
-- IMPORTANT: "I want to sell a car" = valuation intent, NOT browse intent
+ENTITY EXTRACTION RULES:
+- brand: Extract car brand (handle variations like "maruthi" → "Maruti", "hyundai" → "Hyundai", "toyota" → "Toyota", "honda" → "Honda", "kia" → "Kia", "tata" → "Tata", "mahindra" → "Mahindra", "volkswagen" → "Volkswagen", "vw" → "Volkswagen")
+- model: Extract specific car model if mentioned
+- type: Extract car type (Hatchback, Sedan, SUV, MUV, Luxury)
+- budget: Map to nearest bracket BELOW user's maximum amount (handle "under 14 lakhs" → "₹10-15 Lakhs", "below 8 lakhs" → "Under ₹5 Lakhs", "upto 12 lakhs" → "₹10-15 Lakhs")
+- year: Extract manufacturing year if mentioned (handle "2023", "2020", "2019", etc.)
+- fuel: Extract fuel type (Petrol, Diesel, CNG, Electric, Hybrid)
+- kms: Extract kilometers/mileage (handle "50000 kms", "50k kms", "50000 kilometers", "50 thousand kms", "50k", "50 thousand", "50000")
+- owner: Extract ownership info (handle "first owner", "1st owner", "single owner", "second owner", "2nd owner", "third owner", "3rd owner")
+- condition: Extract car condition (handle "excellent", "good", "fair", "poor", "very good", "average")
 
-BROWSE INTENT - User wants to BUY a car:
-- Keywords: buy, purchase, looking for, need, want, show me, find, search, browse
-- Phrases: "I want to buy", "looking for a car", "show me cars", "I need a car", "find me a car", "search for", "browse cars", "want to buy", "purchase a car", "I'm looking for"
-- Context: User mentions car preferences (brand, model, type, budget) with buying intent
+VALUATION ENTITY EXAMPLES:
+- "my car is honda" → brand: "Honda"
+- "I have a toyota 2020" → brand: "Toyota", year: "2020"
+- "my vehicle is maruti swift" → brand: "Maruti", model: "Swift"
+- "my ccar type is honda 2023" → brand: "Honda", year: "2023" (handle typos like "ccar")
+- "I own a hyundai i20" → brand: "Hyundai", model: "i20"
+- "Honda City 2022 petrol with 50000 kms" → brand: "Honda", model: "City", year: "2022", fuel: "Petrol", kms: "50000"
+- "first owner, excellent condition" → owner: "1st Owner", condition: "Excellent"
+- "50k kms driven, single owner" → kms: "50000", owner: "1st Owner"
+- "petrol engine, 50 thousand kilometers" → fuel: "Petrol", kms: "50000"
+- "2024 diesel and 50k" → year: "2024", fuel: "Diesel", kms: "50000"
+- "Honda 2023 petrol 50k" → brand: "Honda", year: "2023", fuel: "Petrol", kms: "50000"
+- "Toyota City diesel 2022 50 thousand" → brand: "Toyota", model: "City", fuel: "Diesel", year: "2022", kms: "50000"
 
-CONTACT INTENT - User wants to contact/help:
-- Keywords: contact, help, support, call, speak, talk, meet, visit, office, address, phone
-- Phrases: "contact you", "call me", "speak to someone", "help me", "support", "visit your office", "meet in person", "talk to salesperson"
+TYPO CORRECTION EXAMPLES (Browse):
+- "I want toyoto innova sedan under 5 lkahs" → intent: "browse", brand: "Toyota", model: "Innova", type: "MUV", budget: "Under ₹5 Lakhs"
+- "maruthi swift hatchback under 8 lacs" → intent: "browse", brand: "Maruti", model: "Swift", type: "Hatchback", budget: "Under ₹5 Lakhs"
+- "hyunday creta suv under 15 lkhsa" → intent: "browse", brand: "Hyundai", model: "Creta", type: "SUV", budget: "₹10-15 Lakhs"
+- "mahendra scorpio under 12 laksh" → intent: "browse", brand: "Mahindra", model: "Scorpio", type: "SUV", budget: "₹10-15 Lakhs"
+- "toyata camry luxary sedan" → intent: "browse", brand: "Toyota", model: "Camry", type: "Luxury"
 
-ABOUT INTENT - User wants information about company:
-- Keywords: about, company, information, details, who, what, where, when, why
-- Phrases: "about you", "tell me about", "company information", "who are you", "what do you do", "where are you located"
+TYPO CORRECTION EXAMPLES (Valuation):
+- "my ccar is handa city 2020 diesal" → intent: "valuation", brand: "Honda", model: "City", year: "2020", fuel: "Diesel"
+- "I have maruthi swift 50k kms frist owner" → intent: "valuation", brand: "Maruti", model: "Swift", kms: "50000", owner: "1st Owner"
+- "toyoto innova 2018 petral good conditon" → intent: "valuation", brand: "Toyota", model: "Innova", year: "2018", fuel: "Petrol", condition: "Good"
 
-Examples for LLM Learning:
+BRAND NORMALIZATION EXAMPLES:
+- "maruthi" → "Maruti"
+- "maruti suzuki" → "Maruti"
+- "suzuki" → "Maruti"
+- "hyundai" → "Hyundai"
+- "toyota" → "Toyota"
+- "honda" → "Honda"
+- "kia" → "Kia"
+- "tata" → "Tata"
+- "mahindra" → "Mahindra"
+- "volkswagen" → "Volkswagen"
+- "vw" → "Volkswagen"
 
-SPELLING CORRECTION EXAMPLES:
-- "I want to sell my 2020 Hondu City petrol" = intent: valuation, brand: Honda, model: City, year: 2020, fuel: Petrol
-- "Sell my Maruthi Swift 2019 diesel" = intent: valuation, brand: Maruti, model: Swift, year: 2019, fuel: Diesel
-- "I need a seden" = type: Sedan, intent: browse
-- "Looking for a hatchbak" = type: Hatchback, intent: browse
-- "Show me Hondu City under 10 lakhs" = brand: Honda, model: City, budget: ₹5-10 Lakhs, intent: browse
+TYPO HANDLING AND CORRECTION:
+- Recognize and auto-correct common misspellings: "lkhsa" → "lakhs", "maruthi" → "Maruti", "toyoto" → "Toyota"
+- Handle alternative spellings: "lacs" → "lakhs", "hatch back" → "Hatchback"
+- Auto-correct brand variations: "hyunday" → "Hyundai", "mahendra" → "Mahindra", "toyata" → "Toyota"
+- Fix budget typos: "lkahs" → "lakhs", "lkhsa" → "lakhs", "lacs" → "lakhs"
+- Understand user intent despite multiple typos in the same message
+- Always output the corrected/normalized form in your response
 
-MIXED LANGUAGE EXAMPLES:
-- "Mera car bechna hai" = intent: valuation
-- "Car valuation chahiye" = intent: valuation
-- "Kya aap help kar sakte hain" = intent: contact
-- "I want to sell my gadi" = intent: valuation
-- "Car ki price kya hai" = intent: valuation
+BUDGET INTERPRETATION:
+- "under X lakhs" → Choose bracket below X
+- "around X lakhs" → Choose nearest bracket
+- "upto X lakhs" → Choose bracket below X
+- "maximum X lakhs" → Choose bracket below X
+- "between X-Y lakhs" → Choose appropriate bracket
+- Handle typos: "lkhsa", "lakh", "lacs" all mean "lakhs"
 
-NEGATIVE FEEDBACK EXAMPLES:
-- "Your service is bad" = intent: contact, confidence: 0.8
-- "I don't like your cars" = intent: contact, confidence: 0.8
-- "This is useless" = intent: contact, confidence: 0.8
-- "I'm disappointed" = intent: contact, confidence: 0.8
-- "Your prices are too high" = intent: contact, confidence: 0.8
+BUDGET EXAMPLES:
+- "under 14 lakhs" → "₹10-15 Lakhs"
+- "below 8 lakhs" → "Under ₹5 Lakhs"
+- "upto 12 lakhs" → "₹10-15 Lakhs"
+- "under 18 lakhs" → "₹15-20 Lakhs"
+- "around 7 lakhs" → "₹5-10 Lakhs"
+- "maximum 25 lakhs" → "Above ₹20 Lakhs"
 
-STANDARD EXAMPLES:
-- "I want to sell a car" = intent: valuation (CRITICAL: This is valuation, NOT browse)
-- "I want to sell my 2020 Honda City petrol" = intent: valuation, brand: Honda, model: City, year: 2020, fuel: Petrol
-- "Get valuation for Hyundai Creta 2021" = intent: valuation, brand: Hyundai, model: Creta, year: 2021
-- "I want to buy Maruti Swift" = brand: Maruti, model: Swift, intent: browse
-- "Show me Honda City under 10 lakhs" = brand: Honda, model: City, budget: ₹5-10 Lakhs, intent: browse
-- "I need a sedan" = type: Sedan, intent: browse
-- "Budget is 5 lakhs" = budget: Under ₹5 Lakhs, intent: browse
-- "Contact your team" = intent: contact
-- "Tell me about your company" = intent: about
+OUTPUT FORMAT:
+Return ONLY this JSON structure:
+{
+  "intent": "browse_used_cars|valuation|contact|about|null",
+  "entities": {
+    "brand": "string|null",
+    "model": "string|null", 
+    "type": "string|null",
+    "budget": "string|null",
+    "year": "string|null",
+    "fuel": "string|null",
+    "kms": "string|null",
+    "owner": "string|null",
+    "condition": "string|null"
+  },
+  "confidence": 0.0-1.0,
+  "context": "browse_used_cars_flow"
+}
 
-GREETING EXAMPLES:
-- "Good morning" = intent: contact, confidence: 0.8
-- "Hello" = intent: contact, confidence: 0.8
-- "Hi" = intent: contact, confidence: 0.8
-- "Hey" = intent: contact, confidence: 0.8
-- "Good afternoon" = intent: contact, confidence: 0.8
-- "Good evening" = intent: contact, confidence: 0.8
+EXAMPLES:
+"I want sedan under 10 lakhs" → {"intent": "browse_used_cars", "entities": {"budget": "₹5-10 Lakhs", "type": "Sedan"}}
+"My car is Honda City" → {"intent": "valuation", "entities": {"brand": "Honda", "model": "City"}}`;
 
-VALIDATION EXAMPLES (should be rejected):
-- "Sell my 2025 Honda City" = intent: valuation, brand: Honda, model: City, year: null (invalid year), confidence: 0.3
-- "Sell my 1990 Honda City" = intent: valuation, brand: Honda, model: City, year: null (invalid year), confidence: 0.3
-- "My car has 1000000 km" = intent: null, confidence: 0.0 (invalid data)
-- "Budget is 0 lakhs" = intent: browse, budget: null (invalid budget), confidence: 0.3
-- "Budget is 100 lakhs" = intent: browse, budget: null (invalid budget), confidence: 0.3
-- "Show me cars in 0 lakhs" = intent: browse, budget: null (invalid budget), confidence: 0.3
+    const userPrompt = `User said: "${userMessage}". Extract intent and entities:`;
 
-User: "${userMessage}"`;
-
-    const result = await model.generateContent(prompt);
-    const text = (await result.response).text();
-    console.log('🤖 AI raw response:', text);
-    let parsed;
-    // Clean common code fences and extract JSON
-    const cleaned = (() => {
-      try {
-        let t = text.trim();
-        t = t.replace(/^```[a-zA-Z0-9]*\n?/m, '').replace(/```$/m, '').replace(/```/g, '').trim();
-        // If still not plain JSON, try extracting the first {...} block
-        if (!(t.startsWith('{') && t.endsWith('}'))) {
-          const start = t.indexOf('{');
-          const end = t.lastIndexOf('}');
-          if (start !== -1 && end !== -1 && end > start) {
-            t = t.slice(start, end + 1);
-          }
-        }
-        return t;
-      } catch { return text; }
-    })();
-    try { parsed = JSON.parse(cleaned); } catch (_) { return { intent: null, entities: {}, confidence: 0 }; }
+    // Use load balancer
+    const parsed = await geminiWrapper.parseUserIntent(systemPrompt, userPrompt);
+    
+    if (!parsed || Object.keys(parsed).length === 0) {
+      console.log('❌ Empty response from load balancer');
+      return { intent: null, entities: {}, confidence: 0 };
+    }
 
     const intent = parsed.intent || null;
     const entities = parsed.entities || {};
     const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
 
-    // Normalize entities against DB. No fuzzy in code; only LLM guesses.
-    const normalized = await normalizeEntities(pool, entities);
-
-    const final = { intent, entities: normalized.entities, confidence: Math.min(Math.max(confidence, 0), 1), notes: normalized.notes };
+    // Skip normalization for faster response - use entities as-is
+    const final = { 
+      intent, 
+      entities: entities, 
+      confidence: Math.min(Math.max(confidence, 0), 1), 
+      notes: ['no_normalization'] 
+    };
     console.log('🤖 AI parsed:', final);
     return final;
-  } catch (e) {
-    console.error('❌ parseUserIntent error:', e.message);
-    return { intent: null, entities: {}, confidence: 0 };
-  }
+        } catch (e) {
+          console.error('❌ parseUserIntent error:', e.message);
+          
+          // Use fallback parsing when API fails
+          if (e.message.includes('API Key not found') || e.message.includes('API_KEY_INVALID') || e.message.includes('Service Unavailable')) {
+            console.log('🔄 API failed, using fallback parsing...');
+            const { fallbackParseUserIntent } = require('./fallbackAI');
+            return fallbackParseUserIntent(userMessage);
+          }
+          
+          return { intent: null, entities: {}, confidence: 0 };
+        }
 }
 
-// Brand alias mapping for common variations (LLM handles most typos, keeping only essential mappings)
-        const BRAND_ALIASES = {
-          'Suzuki': 'Maruti',
-          'Maruti Suzuki': 'Maruti',
-          'Maruti-Suzuki': 'Maruti',
-          'VW': 'Volkswagen',
-          'Mercedes': 'Mercedes-Benz',
-          'Mercedes Benz': 'Mercedes-Benz',
-          'Mercedes-Benz': 'Mercedes-Benz',
-          'MG': 'MG Motor',
-          'Tata Motors': 'Tata'
-        };
-
-// Car type aliases for normalization (LLM handles most typos, keeping only essential mappings)
-const TYPE_ALIASES = {
-  'hatch back': 'Hatchback',
-  'compact': 'Hatchback',
-  'small car': 'Hatchback',
-  'big car': 'SUV',
-  'sports utility vehicle': 'SUV',
-  'multi utility vehicle': 'MUV',
-  'luxury car': 'Luxury',
-  'premium': 'Luxury'
-};
-
-// Function to find nearest brand match using fuzzy matching
-function findNearestBrand(inputBrand, availableBrands) {
-  if (!inputBrand || !availableBrands || availableBrands.length === 0) {
-    return null;
-  }
-
-  const normalizedInput = inputBrand.toLowerCase().trim();
-  
-  // First check exact match
-  const exactMatch = availableBrands.find(brand => 
-    brand.toLowerCase() === normalizedInput
-  );
-  if (exactMatch) return exactMatch;
-
-  // Check alias mapping
-  const aliasMatch = BRAND_ALIASES[inputBrand];
-  if (aliasMatch && availableBrands.includes(aliasMatch)) {
-    return aliasMatch;
-  }
-
-  // Fuzzy matching - find brands that contain the input or vice versa
-  const fuzzyMatches = availableBrands.filter(brand => {
-    const normalizedBrand = brand.toLowerCase();
-    return normalizedBrand.includes(normalizedInput) || 
-           normalizedInput.includes(normalizedBrand) ||
-           // Check for common misspellings
-           levenshteinDistance(normalizedInput, normalizedBrand) <= 2;
-  });
-
-  if (fuzzyMatches.length > 0) {
-    // Return the closest match (shortest distance)
-    return fuzzyMatches.reduce((closest, current) => 
-      levenshteinDistance(normalizedInput, current.toLowerCase()) < 
-      levenshteinDistance(normalizedInput, closest.toLowerCase()) ? current : closest
-    );
-  }
-
-  return null;
-}
-
-// Levenshtein distance for fuzzy matching
-function levenshteinDistance(str1, str2) {
-  const matrix = [];
-  for (let i = 0; i <= str2.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= str1.length; j++) {
-    matrix[0][j] = j;
-  }
-  for (let i = 1; i <= str2.length; i++) {
-    for (let j = 1; j <= str1.length; j++) {
-      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-  return matrix[str2.length][str1.length];
-}
-
-async function normalizeEntities(pool, entities) {
+// LLM-based entity normalization with load balancing
+async function normalizeEntitiesWithLLM(pool, entities) {
   const notes = [];
   const out = { ...entities };
 
   try {
-    // Types (handle both single values and arrays)
-    if (out.type) {
-      const types = await getAvailableTypes(pool, entities.budget || null);
-      
-      // Handle array of types
-      if (Array.isArray(out.type)) {
-        const validTypes = [];
-        for (const type of out.type) {
-          const aliasMatch = TYPE_ALIASES[type.toLowerCase()];
-          if (aliasMatch && types.includes(aliasMatch)) {
-            validTypes.push(aliasMatch);
-            notes.push(`type_mapped_to_${aliasMatch}`);
-          } else {
-            const typeMatch = types.find(t => t.toLowerCase() === type.toLowerCase());
-            if (typeMatch) {
-              validTypes.push(typeMatch);
-            }
-          }
-        }
-        out.type = validTypes.length > 0 ? validTypes[0] : null; // Take first valid type
-        if (validTypes.length === 0) {
-          notes.push('type_not_in_db');
-        }
-      } else {
-        // Handle single type
-        const aliasMatch = TYPE_ALIASES[out.type.toLowerCase()];
-        if (aliasMatch && types.includes(aliasMatch)) {
-          out.type = aliasMatch;
-          notes.push(`type_mapped_to_${aliasMatch}`);
-        } else {
-          // Check case-insensitive match
-          const typeMatch = types.find(type => type.toLowerCase() === out.type.toLowerCase());
-          if (typeMatch) {
-            out.type = typeMatch; // Use the correct case from database
-          } else if (!types.includes(out.type)) {
-            out.type = null;
-            notes.push('type_not_in_db');
-          }
-        }
-      }
+    if (!process.env.GEMINI_API_KEY) {
+      // If no API key, return entities as-is
+      return { entities: out, notes: ['no_api_key'] };
     }
 
-    // Brands with alias mapping and fuzzy matching (handle both single values and arrays)
-    if (out.brand) {
-      const brands = await getAvailableBrands(pool, entities.budget || null, entities.type || 'all');
-      
-      // Handle array of brands
-      if (Array.isArray(out.brand)) {
-        const validBrands = [];
-        for (const brand of out.brand) {
-          const nearestBrand = findNearestBrand(brand, brands);
-          if (nearestBrand) {
-            validBrands.push(nearestBrand);
-            if (nearestBrand !== brand) {
-              notes.push(`brand_mapped_to_${nearestBrand}`);
-            }
-          }
-        }
-        out.brand = validBrands.length > 0 ? validBrands[0] : null; // Take first valid brand
-        if (validBrands.length === 0) {
-          notes.push('brand_not_in_db');
-        }
-      } else {
-        // Handle single brand
-        const nearestBrand = findNearestBrand(out.brand, brands);
-        if (nearestBrand) {
-          out.brand = nearestBrand;
-          if (nearestBrand !== out.brand) {
-            notes.push(`brand_mapped_to_${nearestBrand}`);
-          }
-        } else {
-          out.brand = null;
-          notes.push('brand_not_in_db');
-        }
-      }
+    // Check if load balancer is available
+    if (!geminiWrapper.isAvailable()) {
+      console.log('🚫 API load balancer unavailable for normalization, using entities as-is');
+      return { entities: out, notes: ['load_balancer_unavailable'] };
     }
 
-    // Models
-    if (out.brand && out.model) {
-      const models = await getModelsByBrand(pool, out.brand);
-      if (!models.includes(out.model)) {
-        out.model = null;
-        notes.push('model_not_in_db');
-      }
+    // Get available options from database
+    const types = await getAvailableTypes(pool, entities.budget || null);
+    const brands = await getAvailableBrands(pool, entities.budget || null, entities.type || 'all');
+
+    const systemPrompt = `You are normalizing car-related entities to match database values.
+
+SYSTEM INSTRUCTIONS:
+1. Map the given entities to the closest matches from available options
+2. Handle typos, misspellings, and variations intelligently
+3. Return ONLY valid JSON with normalized values
+4. If no good match exists, return null for that entity
+
+AVAILABLE CAR TYPES: ${types.join(', ')}
+AVAILABLE BRANDS: ${brands.join(', ')}
+
+NORMALIZATION RULES:
+- Handle common misspellings: "maruthi" → "Maruti", "lkhsa" → "lakhs"
+- Map variations: "hatch back" → "Hatchback", "VW" → "Volkswagen"
+- Use case-insensitive matching
+- Choose closest available option
+
+OUTPUT FORMAT:
+{
+  "brand": "normalized_brand_or_null",
+  "model": "model_or_null", 
+  "type": "normalized_type_or_null",
+  "budget": "budget_or_null",
+  "year": "year_or_null",
+  "fuel": "fuel_or_null",
+  "kms": "kms_or_null",
+  "owner": "owner_or_null",
+  "condition": "condition_or_null"
+}`;
+
+    const userPrompt = `Normalize these entities:
+${JSON.stringify(entities, null, 2)}
+
+Return normalized JSON:`;
+
+    // Use load balancer
+    const normalized = await geminiWrapper.normalizeEntities(systemPrompt, userPrompt);
+    
+    if (normalized && Object.keys(normalized).length > 0) {
+      // Update entities with normalized values
+      Object.keys(normalized).forEach(key => {
+        if (normalized[key] !== null && normalized[key] !== undefined) {
+          out[key] = normalized[key];
+          if (out[key] !== entities[key]) {
+            notes.push(`${key}_normalized`);
+          }
+        }
+      });
+    } else {
+      console.log('❌ Empty response from load balancer normalization');
+      notes.push('empty_response');
     }
+
   } catch (e) {
-    console.error('❌ normalizeEntities error:', e.message);
+    console.error('❌ normalizeEntitiesWithLLM error:', e.message);
+    notes.push('normalization_error');
   }
 
-  // Budget mapping must already be bucketed by LLM; keep as-is or null
   return { entities: out, notes };
+}
+
+async function normalizeEntities(pool, entities) {
+  // Use the new LLM-based normalization
+  return await normalizeEntitiesWithLLM(pool, entities);
 }
