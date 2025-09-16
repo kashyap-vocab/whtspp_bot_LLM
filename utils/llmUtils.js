@@ -18,7 +18,7 @@ async function checkUnrelatedTopic(userMessage, flowContext = 'general') {
     console.log(`🔍 Checking unrelated topic for flow: ${flowContext}`);
     
     // Try LLM-based detection first
-    const response = await parseUserIntent(pool, userMessage);
+    const response = await parseUserIntent(pool, userMessage, flowContext);
     
     if (response && typeof response.is_unrelated === 'boolean') {
       const result = {
@@ -32,27 +32,71 @@ async function checkUnrelatedTopic(userMessage, flowContext = 'general') {
       return result;
     }
     
-    // LLM failed to detect unrelated topics, assume related
-    console.log('⚠️ LLM detection failed, assuming topic is related');
+    // LLM failed to detect unrelated topics, use keyword-based fallback
+    console.log('⚠️ LLM detection failed, using keyword-based fallback');
+    const fallbackResult = detectUnrelatedByKeywords(userMessage);
     return { 
-      isUnrelated: false, 
-      confidence: 0.5, 
-      topic: 'assumed_related',
+      isUnrelated: fallbackResult.isUnrelated, 
+      confidence: fallbackResult.confidence, 
+      topic: fallbackResult.topic,
       redirectMessage: getRedirectMessage(flowContext)
     };
     
   } catch (error) {
     console.log('❌ LLM unrelated detection error:', error.message);
-    // LLM failed, assume topic is related
+    // LLM failed, use keyword-based fallback
+    const fallbackResult = detectUnrelatedByKeywords(userMessage);
     return { 
-      isUnrelated: false, 
-      confidence: 0.5, 
-      topic: 'error',
+      isUnrelated: fallbackResult.isUnrelated, 
+      confidence: fallbackResult.confidence, 
+      topic: fallbackResult.topic,
       redirectMessage: getRedirectMessage(flowContext)
     };
   }
 }
 
+
+/**
+ * Detect unrelated topics using keyword-based fallback when LLM fails
+ * @param {string} userMessage - The user's message to check
+ * @returns {Object} - { isUnrelated: boolean, confidence: number, topic: string }
+ */
+function detectUnrelatedByKeywords(userMessage) {
+  const lowerMsg = userMessage.toLowerCase();
+  
+  // Define unrelated topic keywords
+  const unrelatedKeywords = {
+    weather: ['weather', 'rain', 'sunny', 'temperature', 'hot', 'cold', 'cloudy', 'storm'],
+    food: ['food', 'hungry', 'eat', 'pizza', 'restaurant', 'cook', 'meal', 'dinner', 'lunch'],
+    sports: ['sports', 'cricket', 'football', 'match', 'game', 'score', 'team', 'player', 'ipl'],
+    technology: ['technology', 'ai', 'blockchain', 'iphone', 'computer', 'software', 'app', 'tech'],
+    travel: ['travel', 'vacation', 'holiday', 'trip', 'flight', 'hotel', 'destination', 'tour'],
+    business: ['business', 'hours', 'address', 'phone', 'location', 'office', 'company', 'work'],
+    personal: ['personal', 'name', 'age', 'how are you', 'joke', 'tell me about yourself', 'hello'],
+    general: ['what', 'where', 'when', 'why', 'how', 'who', 'which', 'tell me about']
+  };
+  
+  // Check for unrelated keywords
+  for (const [category, keywords] of Object.entries(unrelatedKeywords)) {
+    if (keywords.some(keyword => lowerMsg.includes(keyword))) {
+      return {
+        isUnrelated: true,
+        confidence: 0.8,
+        topic: category
+      };
+    }
+  }
+  
+  // Check for car-related keywords to confirm it's related
+  const carKeywords = ['car', 'vehicle', 'auto', 'honda', 'toyota', 'maruti', 'hyundai', 'tata', 'mahindra', 'valuation', 'sell', 'buy', 'model', 'brand', 'year', 'fuel', 'kilometers', 'owners', 'condition'];
+  const isCarRelated = carKeywords.some(keyword => lowerMsg.includes(keyword));
+  
+  return {
+    isUnrelated: !isCarRelated,
+    confidence: isCarRelated ? 0.9 : 0.6,
+    topic: isCarRelated ? 'car_related' : 'unclear'
+  };
+}
 
 /**
  * Get appropriate redirect message based on flow context
@@ -161,7 +205,7 @@ async function validateOptionInput(userMessage, availableOptions, context = {}) 
     
     // Try LLM-based matching for typed input
     try {
-      const response = await parseUserIntent(pool, userMessage);
+      const response = await parseUserIntent(pool, userMessage, context.flowContext || 'general');
       
       if (response && response.matched_option) {
         return {
@@ -204,7 +248,7 @@ async function parseDateTimeInput(userMessage, flowContext = 'general') {
   try {
     console.log(`🔍 Parsing date/time input for flow: ${flowContext}`);
     
-    const response = await parseUserIntent(pool, userMessage);
+    const response = await parseUserIntent(pool, userMessage, flowContext);
     
     if (response && response.date) {
       return {

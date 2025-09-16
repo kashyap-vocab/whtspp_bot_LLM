@@ -1,3 +1,9 @@
+const { 
+  checkUnrelatedTopic, 
+  validateStepInput, 
+  validateOptionInput
+} = require('./llmUtils');
+
 const aboutUsMenu = [
   "🏢 Company Story",
   "🌟 Why Choose Us",
@@ -22,19 +28,104 @@ async function handleAboutUsStep(session, userMessage) {
   switch (step) {
     case "about_start":
     case "about_menu":
-      // Light AI: if user asks free-text like "where are you located"
+      // Check for unrelated topics first
+      const aboutTopicCheck = await checkUnrelatedTopic(userMessage, 'about_us');
+      if (aboutTopicCheck.isUnrelated && aboutTopicCheck.confidence > 0.7) {
+        return {
+          message: aboutTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Enhanced skip logic - parse user requirements
       try {
         const { parseUserIntent } = require('./geminiHandler');
         const pool = require('../db');
         const ai = await parseUserIntent(pool, userMessage);
         const threshold = parseFloat(process.env.AI_PROPOSAL_CONFIDENCE || '0.75');
         if (ai && ai.confidence >= threshold && ai.intent === 'about') {
+          const e = ai.entities || {};
+          
+          // Auto-apply if specific about topic is mentioned
+          if (e.about_topic) {
+            if (e.about_topic.includes('story') || e.about_topic.includes('company')) {
+              session.step = "about_selection";
+              return {
+                message: `Here's our journey and what makes Sherpa Hyundai special: 🚗✨
+
+🏁 Where It All Began:
+Sherpa Hyundai started with a simple mission — to make car buying and ownership a smooth, honest, and enjoyable experience for every customer.
+
+🎯 Our Core Values:
+• Trust & Transparency in every transaction
+• Quality assurance for every vehicle
+• Customer-first approach in all interactions
+• Innovation in automotive solutions
+
+🌟 What Sets Us Apart:
+We're not just another car dealership. We're your trusted automotive partner, committed to providing exceptional service and genuine value.
+
+Ready to explore more about us?`,
+                options: aboutUsMenu
+              };
+            } else if (e.about_topic.includes('location') || e.about_topic.includes('address')) {
+              session.step = "about_selection";
+              return {
+                message: `📍 Our Locations:
+
+🏢 Main Showroom - Bangalore:
+📍 Address: 123 MG Road, Bangalore - 560001
+🕒 Mon-Sat: 9 AM - 8 PM, Sun: 10 AM - 6 PM
+📞 Phone: +91-9876543210
+
+🏢 Branch - Electronic City:
+📍 Address: 456 IT Park Road, Electronic City - 560100
+🕒 Mon-Sat: 9 AM - 8 PM
+📞 Phone: +91-9876543212
+
+🚗 Easy Access & Parking Available at Both Locations!`,
+                options: aboutUsMenu
+              };
+            } else if (e.about_topic.includes('service') || e.about_topic.includes('services')) {
+              session.step = "about_selection";
+              return {
+                message: `🎯 Our Services:
+
+🚗 Car Sales & Purchase:
+• Certified pre-owned vehicles
+• Transparent pricing & documentation
+• Financing assistance
+
+🔧 Service & Maintenance:
+• Expert technicians
+• Genuine parts & accessories
+• Warranty support
+
+💰 Valuation & Trade-ins:
+• Free car valuation
+• Fair trade-in offers
+• Instant quotes
+
+📞 Customer Support:
+• 24/7 helpline
+• WhatsApp assistance
+• After-sales support
+
+We're your one-stop automotive solution!`,
+                options: aboutUsMenu
+              };
+            }
+          }
+          
           return {
             message: "I can share our story, services, awards, or locations. What would you like to see?",
             options: aboutUsMenu
           };
         }
-      } catch (_) {}
+      } catch (error) {
+        console.log('⚠️ About Us AI parsing failed:', error.message);
+      }
+      
       session.step = "about_selection";
       return {
         message: "Welcome to Sherpa Hyundai! Here's what you'd like to know about us:",
@@ -42,6 +133,21 @@ async function handleAboutUsStep(session, userMessage) {
       };
 
     case "about_selection":
+      // Check for unrelated topics first
+      const selectionTopicCheck = await checkUnrelatedTopic(userMessage, 'about_us');
+      if (selectionTopicCheck.isUnrelated && selectionTopicCheck.confidence > 0.7) {
+        return {
+          message: selectionTopicCheck.redirectMessage,
+          options: ["🚗 Browse Used Cars", "💰 Get Car Valuation", "📞 Contact Our Team", "ℹ️ About Us"]
+        };
+      }
+
+      // Validate if user typed option instead of selecting
+      const validation = await validateOptionInput(userMessage, aboutUsMenu, { context: 'about_selection' });
+      if (validation.isValid && validation.confidence > 0.7) {
+        userMessage = validation.matchedOption;
+      }
+
       if (userMessage.includes("Company Story")) {
         return {
           message: `Here's our journey and what makes Sherpa Hyundai special: 🚗✨
